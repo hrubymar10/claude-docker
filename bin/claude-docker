@@ -1,0 +1,33 @@
+#!/bin/bash
+# Interactive Claude Code session inside the Docker container.
+# Opens in the context of your current working directory.
+# Usage: claude-docker [claude args...]
+set -euo pipefail
+
+CONTAINER="${CLAUDE_DOCKER_CONTAINER:-claude-docker}"
+USER="${CLAUDE_DOCKER_USER:-$(whoami)}"
+WORKDIR="$(pwd)"
+
+die() { echo "Error: $1" >&2; exit 1; }
+
+# Check Docker daemon is running
+docker info >/dev/null 2>&1 \
+  || die "Docker is not running."
+
+# Check container exists and is running
+STATUS=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null) \
+  || die "Container '$CONTAINER' does not exist. Run: claude-docker-ctrl start"
+[[ "$STATUS" == "running" ]] \
+  || die "Container '$CONTAINER' is $STATUS. Run: claude-docker-ctrl start"
+
+# Check current directory is mounted in the container
+MOUNTS=$(docker inspect --format '{{range .Mounts}}{{.Source}} {{end}}' "$CONTAINER")
+MOUNTED=false
+for src in $MOUNTS; do
+  [[ "$WORKDIR" == "$src"* ]] && MOUNTED=true && break
+done
+$MOUNTED || die "Directory '$WORKDIR' is not mounted in container.
+Add it to docker-compose.yml volumes."
+
+exec docker exec -it -u "$USER" -w "$WORKDIR" "$CONTAINER" \
+  claude --dangerously-skip-permissions "$@"

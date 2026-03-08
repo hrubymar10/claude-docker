@@ -1,0 +1,391 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+CONFIG_DIR="$PROJECT_DIR/config"
+CONTAINER_NAME="claude-docker"
+CONTAINER_USER="${HOST_USER:-$(whoami)}"
+SSH_RELAY_PID_FILE="${HOME}/.claude-docker-ssh-relay.pid"
+SSH_RELAY_PORT=19922
+
+# ── Compose file list (base + optional local override) ───────────
+COMPOSE_FILES=(-f "$PROJECT_DIR/docker-compose.yml")
+if [[ -f "$CONFIG_DIR/docker-compose.local.yml" ]]; then
+  COMPOSE_FILES+=(-f "$CONFIG_DIR/docker-compose.local.yml")
+else
+  echo "Note: no config/docker-compose.local.yml found. Only base volumes will be mounted." >&2
+  echo "  cp config/docker-compose.local.example.yml config/docker-compose.local.yml" >&2
+fi
+
+if [[ ! -f "$CONFIG_DIR/claude-notifier" ]]; then
+  echo "Note: no config/claude-notifier found. Copying example (no-op by default)." >&2
+  cp "$CONFIG_DIR/claude-notifier.example" "$CONFIG_DIR/claude-notifier"
+  chmod +x "$CONFIG_DIR/claude-notifier"
+fi
+
+# Mount global ~/CLAUDE.md if it exists
+if [[ -f "$HOME/CLAUDE.md" ]]; then
+  CLAUDEMD_OVERRIDE=$(mktemp "${TMPDIR:-/tmp}/claude-docker-claudemd.XXXXXX")
+  cat > "$CLAUDEMD_OVERRIDE" <<YAMLEOF
+services:
+  claude:
+    volumes:
+      - ${HOME}/CLAUDE.md:${HOME}/CLAUDE.md:ro
+YAMLEOF
+  COMPOSE_FILES+=(-f "$CLAUDEMD_OVERRIDE")
+fi
+
+# Mount ~/.ssh/known_hosts if it exists (for SSH auth)
+if [[ -f "$HOME/.ssh/known_hosts" ]]; then
+  SSH_OVERRIDE=$(mktemp "${TMPDIR:-/tmp}/claude-docker-ssh.XXXXXX")
+  cat > "$SSH_OVERRIDE" <<YAMLEOF
+services:
+  claude:
+    volumes:
+      - ${HOME}/.ssh/known_hosts:/Users/${HOST_USER:-$(whoami)}/.ssh/known_hosts:ro
+YAMLEOF
+  COMPOSE_FILES+=(-f "$SSH_OVERRIDE")
+fi
+
+# ── Exclude masking (hide sensitive files/dirs from container) ────
+# Reads x-excludes from docker-compose.local.yml, generates tmpfs/null overlays.
+apply_excludes() {
+  local local_file="$CONFIG_DIR/docker-compose.local.yml"
+  [[ -f "$local_file" ]] || return 0
+
+  # Parse x-excludes block: extract "- pattern" lines after "x-excludes:"
+  local in_block=false patterns=()
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^x-excludes: ]]; then
+      in_block=true
+      continue
+    fi
+    if $in_block; then
+      if [[ "$line" =~ ^[[:space:]]*-[[:space:]]+(.*) ]]; then
+        # Expand env vars in pattern
+        local pat
+        pat=$(eval echo "${BASH_REMATCH[1]}")
+        patterns+=("$pat")
+      else
+        break  # end of list
+      fi
+    fi
+  done < "$local_file"
+
+  [[ ${#patterns[@]} -eq 0 ]] && return 0
+
+  # Expand globs and classify as file/dir
+  local vol_entries=() tmpfs_entries=() count=0
+  for pat in "${patterns[@]}"; do
+    local expanded
+    expanded=$(compgen -G "$pat" 2>/dev/null || true)
+    while IFS= read -r path; do
+      [[ -z "$path" ]] && continue
+      if [[ -d "$path" ]]; then
+        tmpfs_entries+=("$path")
+        ((count++)) || true
+      elif [[ -f "$path" ]]; then
+        vol_entries+=("$path")
+        ((count++)) || true
+      fi
+    done <<< "$expanded"
+  done
+
+  [[ $count -eq 0 ]] && return 0
+
+  local tmpfile
+  tmpfile=$(mktemp "${TMPDIR:-/tmp}/claude-docker-excludes.XXXXXX")
+  echo "services:" > "$tmpfile"
+  echo "  claude:" >> "$tmpfile"
+
+  if [[ ${#vol_entries[@]} -gt 0 ]]; then
+    echo "    volumes:" >> "$tmpfile"
+    for f in "${vol_entries[@]}"; do
+      echo "      - /dev/null:${f}:ro" >> "$tmpfile"
+    done
+  fi
+
+  if [[ ${#tmpfs_entries[@]} -gt 0 ]]; then
+    echo "    tmpfs:" >> "$tmpfile"
+    for d in "${tmpfs_entries[@]}"; do
+      echo "      - ${d}:ro,size=0" >> "$tmpfile"
+    done
+  fi
+
+  COMPOSE_FILES+=(-f "$tmpfile")
+  echo "Exclude masking: $count paths hidden"
+}
+
+die() { echo "Error: $1" >&2; exit 1; }
+
+# ── Pre-flight checks for commands that need a running container ─
+check_container() {
+  docker info >/dev/null 2>&1 \
+    || die "Docker is not running."
+  local status
+  status=$(docker inspect --format '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null) \
+    || die "Container '$CONTAINER_NAME' does not exist. Run: $(basename "$0") start"
+  [[ "$status" == "running" ]] \
+    || die "Container '$CONTAINER_NAME' is $status. Run: $(basename "$0") start"
+}
+
+check_mount() {
+  local workdir="$1"
+  local mounts
+  mounts=$(docker inspect --format '{{range .Mounts}}{{.Source}} {{end}}' "$CONTAINER_NAME")
+  for src in $mounts; do
+    [[ "$workdir" == "$src"* ]] && return 0
+  done
+  die "Directory '$workdir' is not mounted in container.
+Add it to config/docker-compose.local.yml volumes."
+}
+
+# ── Export environment for docker compose ────────────────────────
+setup_env() {
+  # Host user identity
+  export HOST_USER HOST_UID
+  HOST_USER="${HOST_USER:-$(whoami)}"
+  HOST_UID="${HOST_UID:-$(id -u)}"
+
+  # Go version from host
+  export GO_VERSION
+  GO_VERSION=$(go version 2>/dev/null | awk '{print $3}') || true
+  if [[ -z "$GO_VERSION" ]]; then
+    echo "Warning: go not found on host, using default go1.26.0" >&2
+    GO_VERSION="go1.26.0"
+  fi
+
+  # Go module cache path
+  export GOPATH
+  GOPATH=$(go env GOPATH 2>/dev/null) || GOPATH="${HOME}/go"
+
+  # GitHub token: prefer GITHUB_TOKEN env var, fall back to gh CLI
+  if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+    if command -v gh &>/dev/null; then
+      GITHUB_TOKEN=$(gh auth token 2>/dev/null) || true
+    fi
+  fi
+  export GITHUB_TOKEN
+
+  # Git identity
+  if [[ -z "${GIT_USER_NAME:-}" ]]; then
+    GIT_USER_NAME=$(/usr/bin/git config user.name 2>/dev/null) || true
+    export GIT_USER_NAME
+  fi
+  if [[ -z "${GIT_USER_EMAIL:-}" ]]; then
+    GIT_USER_EMAIL=$(/usr/bin/git config user.email 2>/dev/null) || true
+    export GIT_USER_EMAIL
+  fi
+
+  # GONOSUMDB defaults to GOPRIVATE if not explicitly set
+  if [[ -z "${GONOSUMDB:-}" && -n "${GOPRIVATE:-}" ]]; then
+    export GONOSUMDB="$GOPRIVATE"
+  fi
+
+  # SSH agent forwarding — if host has SSH_AUTH_SOCK, set relay env vars
+  if [[ -S "${SSH_AUTH_SOCK:-}" ]]; then
+    export SSH_RELAY_HOST="host.docker.internal"
+    export SSH_RELAY_PORT
+  fi
+
+  # Apply exclude masks (must run before ALLOWED_BIND_MOUNTS)
+  apply_excludes
+
+  # Allowed bind mounts for socket proxy — derived from all compose files.
+  if [[ -z "${ALLOWED_BIND_MOUNTS:-}" ]]; then
+    ALLOWED_BIND_MOUNTS=$(
+      docker compose "${COMPOSE_FILES[@]}" config 2>/dev/null \
+        | sed -n '/^  claude:/,/^  [a-z]/p' \
+        | grep 'source:' \
+        | awk '{print $2}' \
+        | grep '^/' \
+        | paste -sd, -
+    )
+    export ALLOWED_BIND_MOUNTS
+  fi
+}
+
+# ── Beeper server management ─────────────────────────────────────
+BEEPER_PID_FILE="${HOME}/.claude-docker-beeper.pid"
+
+start_beeper() {
+  if [[ -f "$BEEPER_PID_FILE" ]] && kill -0 "$(cat "$BEEPER_PID_FILE")" 2>/dev/null; then
+    echo "Beeper already running (PID $(cat "$BEEPER_PID_FILE"))"
+    return
+  fi
+
+  if ! command -v go &>/dev/null; then
+    echo "Warning: go not found, skipping beeper" >&2
+    return
+  fi
+
+  local beeper_bin="$PROJECT_DIR/beeper/beeper"
+  echo "Building beeper..."
+  go build -o "$beeper_bin" "$PROJECT_DIR/beeper/main.go"
+
+  "$beeper_bin" &
+  local pid=$!
+  echo "$pid" > "$BEEPER_PID_FILE"
+  echo "Beeper started (PID $pid) on http://127.0.0.1:9999"
+}
+
+stop_beeper() {
+  if [[ -f "$BEEPER_PID_FILE" ]]; then
+    local pid
+    pid=$(cat "$BEEPER_PID_FILE")
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid"
+      echo "Beeper stopped (PID $pid)"
+    fi
+    rm -f "$BEEPER_PID_FILE"
+  else
+    echo "No beeper PID file found"
+  fi
+}
+
+beeper_status() {
+  if [[ -f "$BEEPER_PID_FILE" ]] && kill -0 "$(cat "$BEEPER_PID_FILE")" 2>/dev/null; then
+    echo "Beeper: running (PID $(cat "$BEEPER_PID_FILE"))"
+  else
+    echo "Beeper: stopped"
+    rm -f "$BEEPER_PID_FILE" 2>/dev/null
+  fi
+}
+
+# ── SSH agent relay management ────────────────────────────────────
+start_ssh_relay() {
+  [[ -S "${SSH_AUTH_SOCK:-}" ]] || return 0
+
+  if [[ -f "$SSH_RELAY_PID_FILE" ]] && kill -0 "$(cat "$SSH_RELAY_PID_FILE")" 2>/dev/null; then
+    echo "SSH agent relay already running (PID $(cat "$SSH_RELAY_PID_FILE"))"
+    return
+  fi
+
+  if ! command -v socat &>/dev/null; then
+    echo "Warning: socat not found on host, skipping SSH agent relay" >&2
+    return
+  fi
+
+  socat TCP-LISTEN:"$SSH_RELAY_PORT",fork,reuseaddr,bind=127.0.0.1 \
+    UNIX-CONNECT:"$SSH_AUTH_SOCK" &
+  local pid=$!
+  echo "$pid" > "$SSH_RELAY_PID_FILE"
+  echo "SSH agent relay started (PID $pid) on 127.0.0.1:$SSH_RELAY_PORT"
+}
+
+stop_ssh_relay() {
+  if [[ -f "$SSH_RELAY_PID_FILE" ]]; then
+    local pid
+    pid=$(cat "$SSH_RELAY_PID_FILE")
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid"
+      echo "SSH agent relay stopped (PID $pid)"
+    fi
+    rm -f "$SSH_RELAY_PID_FILE"
+  fi
+}
+
+ssh_relay_status() {
+  if [[ -f "$SSH_RELAY_PID_FILE" ]] && kill -0 "$(cat "$SSH_RELAY_PID_FILE")" 2>/dev/null; then
+    echo "SSH relay: running (PID $(cat "$SSH_RELAY_PID_FILE")) on port $SSH_RELAY_PORT"
+  else
+    echo "SSH relay: stopped"
+    rm -f "$SSH_RELAY_PID_FILE" 2>/dev/null
+  fi
+}
+
+# ── Commands ─────────────────────────────────────────────────────
+cmd_start() {
+  setup_env
+  echo "Building image (GO_VERSION=${GO_VERSION})..."
+  docker compose "${COMPOSE_FILES[@]}" build
+  echo "Starting container..."
+  docker compose "${COMPOSE_FILES[@]}" up -d
+  start_ssh_relay
+  echo ""
+  echo "Container '${CONTAINER_NAME}' is running."
+  echo "  Interactive:  $(basename "$0") exec"
+  echo "  Shell:        $(basename "$0") shell"
+  echo "  VSCode:       configure claudeProcessWrapper to bin/claude-docker"
+}
+
+cmd_stop() {
+  setup_env
+  echo "Stopping container..."
+  docker compose "${COMPOSE_FILES[@]}" down
+  stop_ssh_relay
+}
+
+cmd_status() {
+  echo "=== Socket Proxy ==="
+  if docker inspect "claude-socket-proxy" --format '{{.State.Status}}' 2>/dev/null; then
+    docker inspect "claude-socket-proxy" --format 'Name: {{.Name}}  Status: {{.State.Status}}  Started: {{.State.StartedAt}}'
+  else
+    echo "Not running"
+  fi
+  echo ""
+  echo "=== Container ==="
+  if docker inspect "$CONTAINER_NAME" --format '{{.State.Status}}' 2>/dev/null; then
+    docker inspect "$CONTAINER_NAME" --format 'Name: {{.Name}}  Status: {{.State.Status}}  Started: {{.State.StartedAt}}'
+  else
+    echo "Not running"
+  fi
+  echo ""
+  echo "=== Beeper ==="
+  beeper_status
+  echo ""
+  echo "=== SSH Relay ==="
+  ssh_relay_status
+}
+
+cmd_shell() {
+  check_container
+  local workdir="$(pwd)"
+  check_mount "$workdir"
+  exec docker exec -it -u "$CONTAINER_USER" -w "$workdir" "$CONTAINER_NAME" fish
+}
+
+cmd_exec() {
+  shift 2>/dev/null || true
+  check_container
+  local workdir="$(pwd)"
+  check_mount "$workdir"
+  exec docker exec -it -u "$CONTAINER_USER" -w "$workdir" "$CONTAINER_NAME" claude --dangerously-skip-permissions "$@"
+}
+
+cmd_rebuild() {
+  setup_env
+  echo "Rebuilding image from scratch (GO_VERSION=${GO_VERSION})..."
+  docker compose "${COMPOSE_FILES[@]}" build --no-cache
+  echo "Restarting container..."
+  docker compose "${COMPOSE_FILES[@]}" up -d --force-recreate
+  start_ssh_relay
+  echo "Done."
+}
+
+# ── Parse arguments ──────────────────────────────────────────────
+case "${1:-}" in
+  start)   cmd_start ;;
+  stop)    cmd_stop ;;
+  status)  cmd_status ;;
+  shell)   cmd_shell ;;
+  exec)    cmd_exec "$@" ;;
+  rebuild)        cmd_rebuild ;;
+  beeper-start)   start_beeper ;;
+  beeper-stop)    stop_beeper ;;
+  *)
+    echo "Usage: $(basename "$0") <command>"
+    echo ""
+    echo "Commands:"
+    echo "  start           Build image, start container"
+    echo "  stop            Stop container"
+    echo "  status          Show container status"
+    echo "  shell           Fish shell into the container"
+    echo "  exec            Interactive Claude session in container"
+    echo "  rebuild         Rebuild image from scratch + restart"
+    echo "  beeper-start    Start beeper notification server (port 9999)"
+    echo "  beeper-stop     Stop beeper notification server"
+    exit 1
+    ;;
+esac

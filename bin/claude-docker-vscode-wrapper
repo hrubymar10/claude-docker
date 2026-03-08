@@ -1,0 +1,37 @@
+#!/bin/bash
+# VSCode claudeProcessWrapper for Docker-based Claude Code.
+#
+# The extension calls: <wrapper> <host-claude-path> --output-format stream-json ...
+# We discard the host claude path and exec into the container.
+#
+# CRITICAL: Use -i only, NEVER -it. The extension communicates via
+# stdin/stdout stream-json protocol. A TTY (-t) injects escape codes
+# that break the protocol and cause the extension to hang.
+set -euo pipefail
+
+CONTAINER="${CLAUDE_DOCKER_CONTAINER:-claude-docker}"
+USER="${CLAUDE_DOCKER_USER:-$(whoami)}"
+WORKDIR="$(pwd)"
+
+die() { echo "Error: $1" >&2; exit 1; }
+
+# Check Docker daemon is running
+docker info >/dev/null 2>&1 \
+  || die "Docker is not running."
+
+# Check container exists and is running
+STATUS=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null) \
+  || die "Container '$CONTAINER' does not exist. Run: claude-docker-ctrl start"
+[[ "$STATUS" == "running" ]] \
+  || die "Container '$CONTAINER' is $STATUS. Run: claude-docker-ctrl start"
+
+# Check current directory is mounted in the container
+MOUNTS=$(docker inspect --format '{{range .Mounts}}{{.Source}} {{end}}' "$CONTAINER")
+MOUNTED=false
+for src in $MOUNTS; do
+  [[ "$WORKDIR" == "$src"* ]] && MOUNTED=true && break
+done
+$MOUNTED || die "Directory '$WORKDIR' is not mounted in container."
+
+shift  # discard host claude binary path
+exec docker exec -i -u "$USER" -w "$WORKDIR" "$CONTAINER" claude "$@"
