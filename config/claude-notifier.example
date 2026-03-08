@@ -1,0 +1,28 @@
+#!/bin/bash
+# claude-notifier — notification script called from inside the container.
+#
+# Usage: claude-notifier <CATEGORY>
+#
+# Categories (used as interface between Claude and your notification server):
+#   success, error, frustration, warning, task_complete,
+#   attention, target, encouragement, sarcasm
+#
+# The script runs inside the container, so it must reach your host via
+# host.docker.internal. Your notification server (beeper, sounder, etc.)
+# runs on the host — managing it is your responsibility.
+#
+# ── Examples ─────────────────────────────────────────────────────
+
+CATEGORY="${1:-notification}"
+
+# ── Beeper (beeper/ Go server on port 9999) ──────────────────────
+# Ignores category, just plays a beep sound.
+# Start with: claude-docker-ctrl beeper-start
+# curl -s "http://host.docker.internal:9999/beep" >/dev/null 2>&1 &
+
+# ── Sounder (Portal 2 soundboard on port 9998) ──────────────────
+# Uses category to play contextual sounds.
+# curl -s "http://host.docker.internal:9998/play/${CATEGORY}" >/dev/null 2>&1 &
+
+# ── No-op (remove this line to enable one of the above) ─────────
+exit 0

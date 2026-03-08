@@ -1,0 +1,16 @@
+# Local volume mounts — copy to docker-compose.local.yml and edit.
+# Add your project directories here. Paths are mirrored (same path inside container).
+# This file is gitignored so your local config stays private.
+services:
+  claude:
+    volumes:
+      - /Users/${HOST_USER}/projects:/Users/${HOST_USER}/projects
+      # - /Users/${HOST_USER}/work:/Users/${HOST_USER}/work
+
+# Exclude patterns — hide sensitive files/dirs from the container.
+# Supports glob patterns. Directories get empty read-only tmpfs overlays,
+# files get /dev/null bind-mounts. Claude cannot see or read excluded paths.
+# x-excludes:
+#   - /Users/${HOST_USER}/projects/.env
+#   - /Users/${HOST_USER}/projects/*/credentials.json
+#   - /Users/${HOST_USER}/work/secrets/
