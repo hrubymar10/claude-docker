@@ -1,0 +1,77 @@
+services:
+  socket-proxy:
+    image: wollomatic/socket-proxy:1
+    container_name: claude-socket-proxy
+    command:
+      - '-listenip=0.0.0.0'
+      - '-allowfrom=claude-filter-proxy'
+      - '-allowGET=/(v1\..{1,2}/(version|info|containers(/.*)?|images(/.*)?|networks(/.*)?|volumes(/.*)?|build.*|exec/.*|events.*)|_ping)'
+      - '-allowPOST=/(v1\..{1,2}/(containers(/.*)?|images(/.*)?|networks(/.*)?|volumes(/.*)?|build.*|exec/.*)|_ping)'
+      - '-allowPUT=/v1\..{1,2}/(containers(/.*)?)'
+      - '-allowDELETE=/v1\..{1,2}/(containers(/.*)?|images(/.*)?|networks(/.*)?|volumes(/.*)?)'
+      - '-allowHEAD=/(v1\..{1,2}/(containers(/.*)?|images(/.*)?)|_ping)'
+      - '-allowbindmountfrom=${ALLOWED_BIND_MOUNTS}'
+      - '-loglevel=INFO'
+    user: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - claude-internal-net
+    read_only: true
+    tmpfs:
+      - /run
+    restart: unless-stopped
+
+  filter-proxy:
+    container_name: claude-filter-proxy
+    build:
+      context: ./docker-filter-proxy
+    environment:
+      DOCKER_FILTER_UPSTREAM: http://claude-socket-proxy:2375
+      DOCKER_FILTER_LISTEN: 0.0.0.0:2375
+    depends_on:
+      - socket-proxy
+    networks:
+      - claude-internal-net
+      - claude-net
+    read_only: true
+    restart: unless-stopped
+
+  claude:
+    container_name: claude-docker
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HOST_UID: ${HOST_UID}
+        HOST_USER: ${HOST_USER}
+        GO_VERSION: ${GO_VERSION}
+    volumes:
+      - /Users/${HOST_USER}/.claude.json:/Users/${HOST_USER}/.claude.json
+      - /Users/${HOST_USER}/.claude:/Users/${HOST_USER}/.claude
+      - ${GOPATH}/pkg:/Users/${HOST_USER}/go/pkg
+      - ./gpg-keys:/run/gpg-keys:ro
+      - ./config/claude-notifier:/usr/local/bin/claude-notifier:ro
+    working_dir: /Users/${HOST_USER}
+    environment:
+      DOCKER_HOST: tcp://claude-filter-proxy:2375
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GIT_USER_NAME: ${GIT_USER_NAME:-}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
+      GIT_PROTECTED_BRANCHES: ${GIT_PROTECTED_BRANCHES:-main master}
+      GOPRIVATE: ${GOPRIVATE:-}
+      GONOSUMDB: ${GONOSUMDB:-}
+      GOPATH: /Users/${HOST_USER}/go
+      HOST_USER: ${HOST_USER}
+      SSH_RELAY_HOST: ${SSH_RELAY_HOST:-}
+      SSH_RELAY_PORT: ${SSH_RELAY_PORT:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - filter-proxy
+    networks:
+      - claude-net
+
+networks:
+  claude-internal-net:
+  claude-net:
