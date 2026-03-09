@@ -167,6 +167,37 @@ Additionally, the `git` binary is replaced with a wrapper that blocks pushes to 
 
 See [SECURITY_ISSUES.md](SECURITY_ISSUES.md) for known limitations.
 
+## LSP Support
+
+The container ships with language servers pre-installed for fast code navigation (~50ms vs 30-60s with grep):
+
+| Language | Server | Plugin name |
+|----------|--------|-------------|
+| Go | `gopls` | `gopls-lsp@claude-plugins-official` |
+| TypeScript/JavaScript | `typescript-language-server` | `typescript-lsp@claude-plugins-official` |
+| Python | `pyright` | `pyright-lsp@claude-plugins-official` |
+
+Enable plugins in your `~/.claude/settings.json`:
+
+```json
+{
+  "enabledPlugins": {
+    "gopls-lsp@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "pyright-lsp@claude-plugins-official": true
+  }
+}
+```
+
+If running Claude Code on the host (without Docker), install the servers locally too:
+
+```bash
+# macOS (Homebrew)
+brew install go pyright typescript-language-server
+# gopls
+go install golang.org/x/tools/gopls@latest
+```
+
 ## Customization
 
 | What | Where |

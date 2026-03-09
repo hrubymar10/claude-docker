@@ -117,6 +117,7 @@ See `SECURITY_ISSUES.md` for known escape vectors.
 - **`sleep infinity` CMD** — container stays alive, Claude is invoked on-demand via `docker exec`
 - **Go module cache** — `$GOPATH/pkg` is mounted (platform-independent source). Build cache is NOT shared (platform-specific compiled objects)
 - **Local compose override** — user-specific mounts in `config/docker-compose.local.yml` keep the base config shareable
+- **LSP servers pre-installed** — gopls, typescript-language-server, and pyright are included for Claude Code's LSP tool (code navigation in ~50ms vs 30-60s with grep)
 
 ## Known Limitations
 
