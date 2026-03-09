@@ -41,7 +41,7 @@ This makes `claude-docker-ctrl`, `claude-docker`, and the VSCode wrapper availab
 If you haven't already, install and authenticate the Claude CLI on your Mac:
 
 ```bash
-npm install -g @anthropic-ai/claude-code
+curl -fsSL https://claude.ai/install.sh | bash
 claude
 # Follow the authentication flow
 ```
