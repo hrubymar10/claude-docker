@@ -37,7 +37,7 @@ RUN chmod +x /tmp/go-install.sh && /tmp/go-install.sh "${GO_VERSION}" \
     && rm /tmp/go-install.sh \
     && export PATH="/usr/local/go/bin:${PATH}" \
     && go install golang.org/x/tools/gopls@latest \
-    && ln -sf /root/go/bin/gopls /usr/local/bin/gopls \
+    && cp /root/go/bin/gopls /usr/local/bin/gopls \
     && rm -rf /root/go /root/.cache/go-build
 ENV PATH="/usr/local/go/bin:${PATH}"
 
