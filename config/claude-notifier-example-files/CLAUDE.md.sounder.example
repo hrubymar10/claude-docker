@@ -12,7 +12,6 @@ Play sounds **sparingly** — only for meaningful events, not on every tool call
 
 | Event | Category | Example trigger |
 |-------|----------|-----------------|
-| New session starts | `GREETING` | First message of a new conversation — play immediately |
 | Build/test succeeds | `SUCCESS` | After a green test run or successful build |
 | Build/test fails | `ERROR` | After a failed build or test suite |
 | Repeated failures (3+) | `FRUSTRATION` | Third consecutive failed attempt at something |
