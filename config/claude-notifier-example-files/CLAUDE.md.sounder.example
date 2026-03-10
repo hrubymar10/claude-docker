@@ -8,7 +8,7 @@ A Portal 2 soundboard is available via `claude-notifier`. Use it to play context
 
 ## When to play sounds
 
-Play sounds **sparingly** — only for meaningful events, not on every tool call. Use `&` to run in the background so it doesn't block your work.
+Play sounds **sparingly** — only for meaningful events, not on every tool call. Use `&` to run in the background so it doesn't block your work. **If you are a subagent, skip this entire section — never play sounds.**
 
 | Event | Category | Example trigger |
 |-------|----------|-----------------|
