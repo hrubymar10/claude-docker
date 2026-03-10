@@ -70,6 +70,9 @@ ENV DISABLE_AUTOUPDATER=1
 # ── LSP servers (for Claude Code LSP tool) ────────────────────────
 RUN npm install -g typescript typescript-language-server pyright
 
+# ── Environment marker ────────────────────────────────────────────
+RUN touch /this-is-claude-docker-env
+
 # ── Security wrappers (replace real binaries) ─────────────────────
 RUN mkdir -p /usr/libexec/git-real && mv /usr/bin/git /usr/libexec/git-real/git
 COPY scripts/git-wrapper.sh    /usr/bin/git
