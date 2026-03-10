@@ -2,29 +2,34 @@
 
 A Portal 2 soundboard is available via `claude-notifier`. Use it to play contextual sound effects during your work by calling `claude-notifier <CATEGORY>` via Bash (async, fire-and-forget).
 
+**Hooks handle these automatically — do NOT play them manually:**
+- `TASK_COMPLETE` — played automatically when you finish (Stop hook)
+- `ATTENTION` — played automatically on permission requests
+
 ## When to play sounds
 
-Play sounds **sparingly** — at most once per logical event, not on every tool call. Use `&` to run in the background so it doesn't block your work.
+Play sounds **sparingly** — only for meaningful events, not on every tool call. Use `&` to run in the background so it doesn't block your work.
 
 | Event | Category | Example trigger |
 |-------|----------|-----------------|
-| Build/test succeeds | `success` | After a green test run or successful build |
-| Build/test fails | `error` | After a failed build or test suite |
-| Repeated failures (3+) | `frustration` | Third consecutive failed attempt at something |
-| Warning in output | `warning` | Compiler warnings, lint issues, deprecations |
-| Task fully done | `task_complete` | When you finish a user-requested task |
-| Need user input | `attention` | When you're blocked and waiting for the user |
-| Something snarky fits | `sarcasm` | Optional, when the situation calls for GLaDOS commentary |
-| Found what we searched for | `target` | After a successful code search or grep |
-| Long task, halfway through | `encouragement` | During multi-step work to keep spirits up |
+| New session starts | `GREETING` | First message of a new conversation — play immediately |
+| Build/test succeeds | `SUCCESS` | After a green test run or successful build |
+| Build/test fails | `ERROR` | After a failed build or test suite |
+| Repeated failures (3+) | `FRUSTRATION` | Third consecutive failed attempt at something |
+| Warning in output | `WARNING` | Compiler warnings, lint issues, deprecations |
+| Something snarky fits | `SARCASM` | Optional, when the situation calls for GLaDOS commentary |
+| Long task, halfway through | `ENCOURAGEMENT` | During multi-step work to keep spirits up |
 
 ## How to call
 
 ```bash
-claude-notifier error &
+claude-notifier ERROR &
 ```
 
-Do NOT play sounds for:
-- Routine tool calls (reads, edits, greps)
-- Every single commit or git operation
+## Do NOT play sounds
+
+- From inside subagents — never, no exceptions
+- For routine tool calls (reads, edits, greps)
+- For every single commit or git operation
 - When the user hasn't asked you to do anything yet
+- For TASK_COMPLETE or ATTENTION — these are hook-driven
