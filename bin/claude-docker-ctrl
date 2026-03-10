@@ -63,9 +63,12 @@ apply_excludes() {
     fi
     if $in_block; then
       if [[ "$line" =~ ^[[:space:]]*-[[:space:]]+(.*) ]]; then
-        # Expand env vars in pattern
-        local pat
-        pat=$(eval echo "${BASH_REMATCH[1]}")
+        # Expand env vars in pattern (without expanding globs)
+        local pat="${BASH_REMATCH[1]}"
+        pat="${pat//\$\{HOST_USER\}/$HOST_USER}"
+        pat="${pat//\$HOST_USER/$HOST_USER}"
+        pat="${pat//\$\{HOME\}/$HOME}"
+        pat="${pat//\$HOME/$HOME}"
         patterns+=("$pat")
       else
         break  # end of list
