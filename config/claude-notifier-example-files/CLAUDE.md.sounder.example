@@ -25,9 +25,13 @@ Play sounds **sparingly** — only for meaningful events, not on every tool call
 claude-notifier ERROR &
 ```
 
+## Subagents
+
+When using the Agent tool, always prepend this to the prompt: **"You are a subagent. Do NOT call claude-notifier or play any sounds."**
+
 ## Do NOT play sounds
 
-- From inside subagents — never, no exceptions
+- If your prompt says you are a subagent — never, no exceptions
 - For routine tool calls (reads, edits, greps)
 - For every single commit or git operation
 - When the user hasn't asked you to do anything yet
