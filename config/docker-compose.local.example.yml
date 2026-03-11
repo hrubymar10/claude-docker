@@ -7,6 +7,12 @@ services:
       - /Users/${HOST_USER}/projects:/Users/${HOST_USER}/projects
       # - /Users/${HOST_USER}/work:/Users/${HOST_USER}/work
 
+# Extra environment variables — passed through from host into the container.
+# Use ${VAR:-} syntax to forward host env vars (empty string if unset).
+#    environment:
+#      GITHUB_USER: ${GITHUB_USER:-}
+#      MY_CUSTOM_VAR: ${MY_CUSTOM_VAR:-}
+
 # Exclude patterns — hide sensitive files/dirs from the container.
 # Supports glob patterns. Directories get empty read-only tmpfs overlays,
 # files get /dev/null bind-mounts. Claude cannot see or read excluded paths.
