@@ -20,9 +20,9 @@ CATEGORY="${1:-notification}"
 # Start with: claude-docker-ctrl beeper-start
 # curl -s "http://host.docker.internal:9999/beep" >/dev/null 2>&1 &
 
-# ── Sounder (Portal 2 soundboard on port 9998) ──────────────────
+# ── Sounder (Portal 2 soundboard on port 9999) ──────────────────
 # Uses category to play contextual sounds.
-# curl -s "http://host.docker.internal:9998/play/${CATEGORY}" >/dev/null 2>&1 &
+# curl -s "http://host.docker.internal:9999/play/${CATEGORY}" >/dev/null 2>&1 &
 
 # ── No-op (remove this line to enable one of the above) ─────────
 exit 0
