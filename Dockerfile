@@ -28,6 +28,7 @@ RUN apk add --no-cache \
     docker-cli-compose \
     gosu \
     python3 \
+    py3-pip \
     socat
 
 # ── Go + gopls ────────────────────────────────────────────────────
