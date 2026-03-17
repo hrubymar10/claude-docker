@@ -34,4 +34,20 @@ done
 $MOUNTED || die "Directory '$WORKDIR' is not mounted in container."
 
 shift  # discard host claude binary path
-exec docker exec -i -u "$USER" -w "$WORKDIR" "$CONTAINER" claude "$@"
+
+# Run Claude, then sync .claude.json back to host with flock to prevent
+# concurrent partial writes from multiple wrapper instances.
+CLAUDE_JSON="/Users/$USER/.claude.json"
+LOCK="/tmp/.claude-docker-json.lock"
+
+docker exec -i -u "$USER" -w "$WORKDIR" "$CONTAINER" claude "$@"
+EXIT_CODE=$?
+
+# Sync container's .claude.json back to host (atomic: copy to temp + mv)
+(
+  flock -w 5 200 || exit 0
+  TMP="${CLAUDE_JSON}.tmp.$$"
+  docker cp "$CONTAINER:$CLAUDE_JSON" "$TMP" 2>/dev/null && mv -f "$TMP" "$CLAUDE_JSON" || rm -f "$TMP"
+) 200>"$LOCK"
+
+exit $EXIT_CODE
