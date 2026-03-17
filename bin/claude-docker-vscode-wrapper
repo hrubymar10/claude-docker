@@ -10,7 +10,7 @@
 set -euo pipefail
 
 CONTAINER="${CLAUDE_DOCKER_CONTAINER:-claude-docker}"
-USER="${CLAUDE_DOCKER_USER:-$(whoami)}"
+DOCKER_USER="${CLAUDE_DOCKER_USER:-$(whoami)}"
 WORKDIR="$(pwd)"
 
 die() { echo "Error: $1" >&2; exit 1; }
@@ -29,25 +29,20 @@ STATUS=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null) \
 MOUNTS=$(docker inspect --format '{{range .Mounts}}{{.Source}} {{end}}' "$CONTAINER")
 MOUNTED=false
 for src in $MOUNTS; do
-  [[ "$WORKDIR" == "$src"* ]] && MOUNTED=true && break
+  [[ "$WORKDIR" == "$src" || "$WORKDIR" == "$src/"* ]] && MOUNTED=true && break
 done
 $MOUNTED || die "Directory '$WORKDIR' is not mounted in container."
 
 shift  # discard host claude binary path
 
-# Run Claude, then sync .claude.json back to host with flock to prevent
-# concurrent partial writes from multiple wrapper instances.
-CLAUDE_JSON="/Users/$USER/.claude.json"
-LOCK="/tmp/.claude-docker-json.lock"
+# Run Claude, then sync .claude.json back to host.
+# See bin/lib/sync-claude-json.sh for sync semantics (last-writer-wins).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib/sync-claude-json.sh"
 
-docker exec -i -u "$USER" -w "$WORKDIR" "$CONTAINER" claude "$@"
+docker exec -i -u "$DOCKER_USER" -w "$WORKDIR" "$CONTAINER" claude "$@"
 EXIT_CODE=$?
 
-# Sync container's .claude.json back to host (atomic: copy to temp + mv)
-(
-  flock -w 5 200 || exit 0
-  TMP="${CLAUDE_JSON}.tmp.$$"
-  docker cp "$CONTAINER:$CLAUDE_JSON" "$TMP" 2>/dev/null && mv -f "$TMP" "$CLAUDE_JSON" || rm -f "$TMP"
-) 200>"$LOCK"
+sync_claude_json "$CONTAINER"
 
 exit $EXIT_CODE
