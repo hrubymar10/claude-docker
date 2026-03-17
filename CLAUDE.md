@@ -25,6 +25,7 @@ bin/claude-docker-ctrl rebuild  # rebuild image from scratch + restart
 - `docker-filter-proxy/` — Go reverse proxy that blocks privileged containers, host namespacing, dangerous capabilities
 - `bin/claude-docker` — interactive Claude session in container (`-it`)
 - `bin/claude-docker-vscode-wrapper` — VSCode `claudeProcessWrapper` script (`-i` only, no TTY)
+- `bin/claude-docker-jetbrains-wrapper` — JetBrains (GoLand/IntelliJ) Claude command wrapper (auto-detects TTY)
 - `bin/claude-docker-ctrl` — container lifecycle management
 - `config/` — user configuration (gitignored copies + examples):
   - `docker-compose.local.example.yml` — template for project volume mounts
@@ -61,6 +62,19 @@ Symlink the wrapper: `ln -sf $(pwd)/bin/claude-docker-vscode-wrapper /usr/local/
 **Critical:** `useTerminal: false` is required — when `true`, the wrapper is ignored and VSCode calls `claude` directly.
 
 **Critical:** The wrapper uses `-i` only, NEVER `-it`. The extension communicates via stdin/stdout stream-json protocol. A TTY (`-t`) injects escape codes that break the protocol and cause the extension to hang.
+
+## JetBrains (GoLand/IntelliJ) Integration
+
+In GoLand → **Settings → Tools → Claude Code** → set **Claude command** to the full path:
+```
+/path/to/claude-docker/bin/claude-docker-jetbrains-wrapper
+```
+
+Optionally symlink it: `ln -sf $(pwd)/bin/claude-docker-jetbrains-wrapper /usr/local/bin/claude-docker-jetbrains-wrapper`
+
+The wrapper auto-detects TTY: uses `-it` in the embedded terminal, `-i` only for non-interactive/stream-json mode. All arguments are passed through to `claude` inside the container.
+
+**Note:** The same MCP IDE tools limitation applies — `mcp__ide__*` tools don't work across the Docker boundary.
 
 ## Authentication
 

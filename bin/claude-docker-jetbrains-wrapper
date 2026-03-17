@@ -1,0 +1,61 @@
+#!/bin/bash
+# JetBrains (GoLand/IntelliJ) wrapper for Docker-based Claude Code.
+#
+# The JetBrains plugin launches this as the "Claude command" in an
+# embedded terminal. Unlike the VSCode wrapper, this needs TTY support
+# since JetBrains uses terminal-based communication.
+#
+# Setup:
+#   1. Symlink: ln -sf $(pwd)/bin/claude-docker-jetbrains-wrapper /usr/local/bin/claude-docker-jetbrains-wrapper
+#   2. GoLand → Settings → Tools → Claude Code → Claude command:
+#      /usr/local/bin/claude-docker-jetbrains-wrapper
+set -euo pipefail
+
+CONTAINER="${CLAUDE_DOCKER_CONTAINER:-claude-docker}"
+USER="${CLAUDE_DOCKER_USER:-$(whoami)}"
+WORKDIR="$(pwd)"
+
+die() { echo "Error: $1" >&2; exit 1; }
+
+# Check Docker daemon is running
+docker info >/dev/null 2>&1 \
+  || die "Docker is not running."
+
+# Check container exists and is running
+STATUS=$(docker inspect --format '{{.State.Status}}' "$CONTAINER" 2>/dev/null) \
+  || die "Container '$CONTAINER' does not exist. Run: claude-docker-ctrl start"
+[[ "$STATUS" == "running" ]] \
+  || die "Container '$CONTAINER' is $STATUS. Run: claude-docker-ctrl start"
+
+# Check current directory is mounted in the container
+MOUNTS=$(docker inspect --format '{{range .Mounts}}{{.Source}} {{end}}' "$CONTAINER")
+MOUNTED=false
+for src in $MOUNTS; do
+  [[ "$WORKDIR" == "$src"* ]] && MOUNTED=true && break
+done
+$MOUNTED || die "Directory '$WORKDIR' is not mounted in container.
+Add it to config/docker-compose.local.yml volumes."
+
+# Detect TTY: use -it when stdin is a terminal (embedded terminal),
+# use -i only when it's not (stream-json / non-interactive).
+DOCKER_FLAGS="-i"
+if [ -t 0 ]; then
+  DOCKER_FLAGS="-it"
+fi
+
+# Run Claude, then sync .claude.json back to host with flock to prevent
+# concurrent partial writes from multiple wrapper instances.
+CLAUDE_JSON="/Users/$USER/.claude.json"
+LOCK="/tmp/.claude-docker-json.lock"
+
+docker exec $DOCKER_FLAGS -u "$USER" -w "$WORKDIR" "$CONTAINER" claude "$@"
+EXIT_CODE=$?
+
+# Sync container's .claude.json back to host (atomic: copy to temp + mv)
+(
+  flock -w 5 200 || exit 0
+  TMP="${CLAUDE_JSON}.tmp.$$"
+  docker cp "$CONTAINER:$CLAUDE_JSON" "$TMP" 2>/dev/null && mv -f "$TMP" "$CLAUDE_JSON" || rm -f "$TMP"
+) 200>"$LOCK"
+
+exit $EXIT_CODE
