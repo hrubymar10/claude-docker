@@ -2,6 +2,7 @@
 set -euo pipefail
 
 HOST_USER="${HOST_USER:-user}"
+HOST_HOME="${HOST_HOME:-/home/$HOST_USER}"
 
 # ── Seed .claude.json from read-only host mount ─────────────────
 # The host file is bind-mounted read-only at /run/.claude.json.host.
@@ -9,7 +10,7 @@ HOST_USER="${HOST_USER:-user}"
 # This avoids the Docker file-bind-mount race condition when multiple
 # `docker exec` sessions write concurrently (inode divergence on rename,
 # or partial writes on in-place updates).
-CLAUDE_JSON="/Users/$HOST_USER/.claude.json"
+CLAUDE_JSON="$HOST_HOME/.claude.json"
 CLAUDE_JSON_HOST="/run/.claude.json.host"
 CLAUDE_JSON_LOCK="/tmp/.claude-docker-json.lock"
 if [[ -f "$CLAUDE_JSON_HOST" ]]; then
@@ -34,7 +35,7 @@ fi
 
 # ── Git credential helper (GITHUB_TOKEN) ─────────────────────────
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-  CRED_HELPER="/Users/$HOST_USER/.git-credential-github"
+  CRED_HELPER="$HOST_HOME/.git-credential-github"
   printf '#!/bin/sh\nprintf "username=oauth2\\npassword=%%s\\n" "$GITHUB_TOKEN"\n' > "$CRED_HELPER"
   chmod 700 "$CRED_HELPER"
   chown "$HOST_USER:$HOST_USER" "$CRED_HELPER"
@@ -46,7 +47,7 @@ fi
 
 # ── General git credentials (non-GitHub) ──────────────────────────
 if [[ -n "${GIT_AUTH_USER:-}" && -n "${GIT_AUTH_TOKEN:-}" ]]; then
-  CRED_HELPER="/Users/$HOST_USER/.git-credential-generic"
+  CRED_HELPER="$HOST_HOME/.git-credential-generic"
   # Write credentials directly (not env var refs) since GIT_AUTH_USER/TOKEN
   # are only available during entrypoint, not in docker exec sessions.
   # Use #!/bin/bash: printf '%q' produces bash-specific quoting (e.g. user\'name)
@@ -68,7 +69,7 @@ fi
 
 # ── Docker registry auth (ghcr.io) ──────────────────────────────
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-  DOCKER_CONFIG="/Users/$HOST_USER/.docker"
+  DOCKER_CONFIG="$HOST_HOME/.docker"
   mkdir -p "$DOCKER_CONFIG"
   AUTH=$(echo -n "oauth2:$GITHUB_TOKEN" | base64)
   cat > "$DOCKER_CONFIG/config.json" <<EOF
@@ -92,7 +93,7 @@ fi
 GPG_KEY_DIR="/run/gpg-keys"
 if compgen -G "$GPG_KEY_DIR"/*.asc >/dev/null 2>&1 || \
    compgen -G "$GPG_KEY_DIR"/*.gpg >/dev/null 2>&1; then
-  GNUPG_DIR="/Users/$HOST_USER/.gnupg"
+  GNUPG_DIR="$HOST_HOME/.gnupg"
   gosu "$HOST_USER" mkdir -p "$GNUPG_DIR"
   echo "allow-loopback-pinentry" > "$GNUPG_DIR/gpg-agent.conf"
   echo "pinentry-mode loopback"  > "$GNUPG_DIR/gpg.conf"

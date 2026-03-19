@@ -15,7 +15,8 @@ if [[ ! "$_SYNC_USER" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
   echo "Error: CLAUDE_DOCKER_USER contains invalid characters: $_SYNC_USER" >&2
   return 1 2>/dev/null || exit 1
 fi
-CLAUDE_JSON="/Users/${_SYNC_USER}/.claude.json"
+_SYNC_HOME="${HOST_HOME:-$HOME}"
+CLAUDE_JSON="${_SYNC_HOME}/.claude.json"
 CLAUDE_JSON_LOCK="/tmp/.claude-docker-json.lock"
 
 # Portable exclusive file lock on FD 200.

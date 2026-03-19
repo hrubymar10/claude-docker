@@ -43,7 +43,7 @@ if [[ -f "$HOME/.ssh/known_hosts" ]]; then
 services:
   claude:
     volumes:
-      - ${HOME}/.ssh/known_hosts:/Users/${HOST_USER:-$(whoami)}/.ssh/known_hosts:ro
+      - ${HOME}/.ssh/known_hosts:${HOST_HOME:-${HOME}}/.ssh/known_hosts:ro
 YAMLEOF
   COMPOSE_FILES+=(-f "$SSH_OVERRIDE")
 fi
@@ -67,6 +67,8 @@ apply_excludes() {
         local pat="${BASH_REMATCH[1]}"
         pat="${pat//\$\{HOST_USER\}/$HOST_USER}"
         pat="${pat//\$HOST_USER/$HOST_USER}"
+        pat="${pat//\$\{HOST_HOME\}/$HOST_HOME}"
+        pat="${pat//\$HOST_HOME/$HOST_HOME}"
         pat="${pat//\$\{HOME\}/$HOME}"
         pat="${pat//\$HOME/$HOME}"
         patterns+=("$pat")
@@ -146,10 +148,11 @@ Add it to config/docker-compose.local.yml volumes."
 
 # ── Export environment for docker compose ────────────────────────
 setup_env() {
-  # Host user identity
-  export HOST_USER HOST_UID
+  # Host user identity and home directory
+  export HOST_USER HOST_UID HOST_HOME
   HOST_USER="${HOST_USER:-$(whoami)}"
   HOST_UID="${HOST_UID:-$(id -u)}"
+  HOST_HOME="${HOST_HOME:-$HOME}"
 
   # Go version from host
   export GO_VERSION
