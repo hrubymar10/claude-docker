@@ -31,7 +31,7 @@ if [[ -f "$HOME/CLAUDE.md" ]]; then
 services:
   claude:
     volumes:
-      - ${HOME}/CLAUDE.md:${HOME}/CLAUDE.md:ro
+      - ${HOME}/CLAUDE.md:${HOST_HOME:-${HOME}}/CLAUDE.md:ro
 YAMLEOF
   COMPOSE_FILES+=(-f "$CLAUDEMD_OVERRIDE")
 fi
@@ -143,7 +143,8 @@ check_mount() {
     [[ "$workdir" == "$src"* ]] && return 0
   done
   die "Directory '$workdir' is not mounted in container.
-Add it to config/docker-compose.local.yml volumes."
+Add it to config/docker-compose.local.yml volumes, e.g.:
+  - \${HOST_HOME}/${workdir##*/}:\${HOST_HOME}/${workdir##*/}"
 }
 
 # ── Export environment for docker compose ────────────────────────
@@ -153,6 +154,7 @@ setup_env() {
   HOST_USER="${HOST_USER:-$(whoami)}"
   HOST_UID="${HOST_UID:-$(id -u)}"
   HOST_HOME="${HOST_HOME:-$HOME}"
+  [[ "$HOST_HOME" == /* ]] || die "HOST_HOME must be an absolute path: $HOST_HOME"
 
   # Go version from host
   export GO_VERSION

@@ -1,5 +1,6 @@
 # Local volume mounts — copy to docker-compose.local.yml and edit.
 # Add your project directories here. Paths are mirrored (same path inside container).
+# HOST_HOME is auto-detected (e.g. /home/you on Linux, /Users/you on macOS).
 # This file is gitignored so your local config stays private.
 services:
   claude:

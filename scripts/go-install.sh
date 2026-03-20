@@ -17,6 +17,7 @@ curl -fsSL "https://go.dev/dl/${VERSION}.linux-${ARCH}.tar.gz" \
 # Symlinks to match host path references (macOS and Linux)
 mkdir -p /opt/go
 ln -sf /usr/local/go /opt/go/go.darwin-arm64
+ln -sf /usr/local/go /opt/go/go.darwin-amd64
 ln -sf /usr/local/go /opt/go/go.linux-amd64
 ln -sf /usr/local/go /opt/go/go.linux-arm64
 

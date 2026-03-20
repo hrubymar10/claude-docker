@@ -64,7 +64,7 @@ services:
       - ${HOST_HOME}/work:${HOST_HOME}/work
 ```
 
-Paths are mirrored — same path inside and outside the container.
+`HOST_HOME` is auto-detected from your `$HOME` — no need to set it manually. Paths are mirrored (same path inside and outside the container).
 
 ### 5. Start the container
 
