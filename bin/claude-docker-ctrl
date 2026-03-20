@@ -7,12 +7,28 @@ CONFIG_DIR="$PROJECT_DIR/config"
 CONTAINER_USER="${HOST_USER:-$(whoami)}"
 SSH_RELAY_PORT=19922
 
-# Instance name: second argument (after command), or random for start
+# Instance name: second argument (after command), or auto-detect/random
 _CMD="${1:-}"
 _INSTANCE="${2:-}"
+
+# For start/rebuild: generate random name if omitted
 if [[ "$_CMD" == "start" || "$_CMD" == "rebuild" ]] && [[ -z "$_INSTANCE" ]]; then
   _INSTANCE=$(head -c 4 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 4)
 fi
+
+# For commands that need a running container: auto-detect if omitted
+if [[ -z "$_INSTANCE" ]] && [[ "$_CMD" == "stop" || "$_CMD" == "shell" || "$_CMD" == "exec" || "$_CMD" == "status" ]]; then
+  _running=$(docker ps --filter "label=com.docker.compose.service=claude" --format '{{.Names}}' 2>/dev/null || true)
+  _count=$(echo "$_running" | grep -c . 2>/dev/null || echo 0)
+  if [[ "$_count" -eq 1 ]]; then
+    _INSTANCE="${_running#claude-}"
+  elif [[ "$_count" -gt 1 ]]; then
+    echo "Multiple instances running. Specify which one:" >&2
+    echo "$_running" | sed 's/^claude-/  /' >&2
+    exit 1
+  fi
+fi
+
 if [[ -n "$_INSTANCE" ]]; then
   [[ "$_INSTANCE" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "Error: instance name must be alphanumeric: $_INSTANCE" >&2; exit 1; }
   CONTAINER_PREFIX="claude-${_INSTANCE}"
