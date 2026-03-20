@@ -21,9 +21,12 @@ fi
 # For commands that need a running container: auto-detect if omitted
 if [[ -z "$_INSTANCE" ]] && [[ "$_CMD" == "stop" || "$_CMD" == "shell" || "$_CMD" == "exec" || "$_CMD" == "status" ]]; then
   _running=$(docker ps --filter "label=com.docker.compose.service=claude" --format '{{.Names}}' 2>/dev/null || true)
-  _count=$(echo "$_running" | grep -c . 2>/dev/null || echo 0)
+  _count=$(echo "$_running" | grep -c . 2>/dev/null) || _count=0
   if [[ "$_count" -eq 1 ]]; then
     _INSTANCE="${_running#claude-}"
+  elif [[ "$_count" -eq 0 ]]; then
+    echo "No running instances found." >&2
+    exit 1
   elif [[ "$_count" -gt 1 ]]; then
     # Build list with name and start time
     _list=$(docker ps --filter "label=com.docker.compose.service=claude" \
