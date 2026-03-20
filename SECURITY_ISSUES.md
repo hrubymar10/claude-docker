@@ -17,9 +17,7 @@ The socket-proxy's `allowbindmountfrom` restriction only checks `HostConfig.Bind
 **Impact:** Read/write access to arbitrary host paths via the Docker API.
 
 **Mitigations in place:**
-
-**Mitigations in place:**
-- `docker-wrapper.sh` blocks `docker run`, `docker volume`, `docker build`, `docker cp` at the CLI level
+- `docker-wrapper.sh` blocks `docker run`, `docker volume`, `docker network`, `docker build`, `docker cp` at the CLI level
 - Exploiting this requires crafting raw HTTP requests to `tcp://claude-filter-proxy:2375`
 
 ## 2. Git push to feature branches and force push
@@ -91,8 +89,8 @@ The socket-proxy allows POST to `/containers/.*`, `/images/.*`, `/volumes/.*`, `
 
 **Mitigations:**
 
-- `docker-wrapper.sh` restricts CLI commands to a safe whitelist
-- `docker-filter-proxy` blocks dangerous container-create configurations
+- `docker-wrapper.sh` restricts CLI commands to a safe whitelist (blocks run/build/cp/volume/network/login/logout)
+- `docker-filter-proxy` blocks dangerous container-create/update configurations and privileged exec
 - Socket-proxy restricts bind mounts to allowed directories
 - Exploiting the broad API surface requires raw HTTP calls, not CLI
 
@@ -100,8 +98,8 @@ The socket-proxy allows POST to `/containers/.*`, `/images/.*`, `/volumes/.*`, `
 
 ```text
 Claude process
-  └─ docker-wrapper.sh    CLI filter: blocks run/build/cp/volume
-      └─ docker-filter-proxy  Body inspection: blocks privileged/host-ns/caps
+  └─ docker-wrapper.sh    CLI filter: blocks run/build/cp/volume/network/login/logout
+      └─ docker-filter-proxy  Body inspection: blocks privileged/host-ns/caps/exec/update
           └─ socket-proxy      URL filter + bind mount allowlist
               └─ Docker daemon
 ```

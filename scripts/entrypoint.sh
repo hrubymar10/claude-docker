@@ -31,12 +31,17 @@ chmod 644 "$CLAUDE_JSON_LOCK"
 # ── Wait for Docker socket proxy ─────────────────────────────────
 if [[ -n "${DOCKER_HOST:-}" ]]; then
   echo "Waiting for Docker socket proxy..."
+  _proxy_ready=false
   for i in $(seq 1 30); do
     if /usr/bin/docker info >/dev/null 2>&1; then
+      _proxy_ready=true
       break
     fi
     sleep 1
   done
+  if ! $_proxy_ready; then
+    echo "Warning: Docker socket proxy not available after 30s" >&2
+  fi
 fi
 
 # ── Git credential helper (GITHUB_TOKEN) ─────────────────────────
@@ -77,10 +82,11 @@ fi
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
   DOCKER_CONFIG="$HOST_HOME/.docker"
   mkdir -p "$DOCKER_CONFIG"
-  AUTH=$(echo -n "oauth2:$GITHUB_TOKEN" | base64)
+  AUTH=$(printf '%s' "oauth2:$GITHUB_TOKEN" | base64)
   cat > "$DOCKER_CONFIG/config.json" <<EOF
 {"auths":{"ghcr.io":{"auth":"$AUTH"}}}
 EOF
+  chmod 600 "$DOCKER_CONFIG/config.json"
   chown -R "$HOST_USER:$HOST_USER" "$DOCKER_CONFIG"
 fi
 
@@ -88,9 +94,8 @@ fi
 if [[ -n "${SSH_RELAY_HOST:-}" && -n "${SSH_RELAY_PORT:-}" ]]; then
   SSH_SOCK="/tmp/ssh-agent.sock"
   rm -f "$SSH_SOCK"
-  gosu "$HOST_USER" socat UNIX-LISTEN:"$SSH_SOCK",fork \
+  gosu "$HOST_USER" socat UNIX-LISTEN:"$SSH_SOCK",fork,mode=0600 \
     TCP:"$SSH_RELAY_HOST":"$SSH_RELAY_PORT" &
-  export SSH_AUTH_SOCK="$SSH_SOCK"
   echo "SSH agent forwarding enabled ($SSH_RELAY_HOST:$SSH_RELAY_PORT)"
 fi
 

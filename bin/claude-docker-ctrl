@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_DIR="$PROJECT_DIR/config"
 CONTAINER_USER="${HOST_USER:-$(whoami)}"
+# SSH relay port: derived per-instance to avoid collisions with multiple instances.
+# Overridden in setup after _INSTANCE is known. Default for single-instance compat.
 SSH_RELAY_PORT=19922
 
 # Instance name: second argument (after command), or auto-detect/random
@@ -49,7 +51,16 @@ else
 fi
 export CONTAINER_PREFIX
 CONTAINER_NAME="$CONTAINER_PREFIX"
+# Derive per-instance SSH relay port from instance name (deterministic, range 20000-20999)
+if [[ -n "$_INSTANCE" ]]; then
+  SSH_RELAY_PORT=$((20000 + $(printf '%s' "$_INSTANCE" | cksum | awk '{print $1}') % 1000))
+fi
 SSH_RELAY_PID_FILE="${HOME}/.${CONTAINER_PREFIX}-ssh-relay.pid"
+
+# ── Temp file cleanup ─────────────────────────────────────────────
+_TMPFILES=()
+cleanup_tmpfiles() { rm -f "${_TMPFILES[@]}" 2>/dev/null || true; }
+trap cleanup_tmpfiles EXIT
 
 # ── Compose file list (base + optional local override) ───────────
 COMPOSE_FILES=(-p "$CONTAINER_PREFIX" -f "$PROJECT_DIR/docker-compose.yml")
@@ -81,6 +92,7 @@ fi
 # Mount global ~/CLAUDE.md if it exists
 if [[ -f "$HOME/CLAUDE.md" ]]; then
   CLAUDEMD_OVERRIDE=$(mktemp "${TMPDIR:-/tmp}/claude-docker-claudemd.XXXXXX")
+  _TMPFILES+=("$CLAUDEMD_OVERRIDE")
   cat > "$CLAUDEMD_OVERRIDE" <<YAMLEOF
 services:
   claude:
@@ -93,6 +105,7 @@ fi
 # Mount ~/.ssh/known_hosts if it exists (for SSH auth)
 if [[ -f "$HOME/.ssh/known_hosts" ]]; then
   SSH_OVERRIDE=$(mktemp "${TMPDIR:-/tmp}/claude-docker-ssh.XXXXXX")
+  _TMPFILES+=("$SSH_OVERRIDE")
   cat > "$SSH_OVERRIDE" <<YAMLEOF
 services:
   claude:
@@ -155,6 +168,7 @@ apply_excludes() {
 
   local tmpfile
   tmpfile=$(mktemp "${TMPDIR:-/tmp}/claude-docker-excludes.XXXXXX")
+  _TMPFILES+=("$tmpfile")
   echo "services:" > "$tmpfile"
   echo "  claude:" >> "$tmpfile"
 
@@ -173,7 +187,7 @@ apply_excludes() {
   fi
 
   COMPOSE_FILES+=(-f "$tmpfile")
-  echo "Exclude masking: $count paths hidden"
+  echo "Exclude masking: $count paths hidden" >&2
 }
 
 die() { echo "Error: $1" >&2; exit 1; }
@@ -195,7 +209,7 @@ check_mount() {
   local mounts
   mounts=$(docker inspect --format '{{range .Mounts}}{{.Source}} {{end}}' "$CONTAINER_NAME")
   for src in $mounts; do
-    [[ "$workdir" == "$src"* ]] && return 0
+    [[ "$workdir" == "$src" || "$workdir" == "$src/"* ]] && return 0
   done
   die "Directory '$workdir' is not mounted in container.
 Add it to config/docker-compose.local.yml volumes, e.g.:
@@ -425,9 +439,11 @@ cmd_shell() {
 }
 
 cmd_exec() {
-  shift 2>/dev/null || true  # drop command name
-  if [[ -n "$_INSTANCE" ]]; then
-    shift 2>/dev/null || true  # drop instance name
+  shift 2>/dev/null || true  # drop command name ("exec")
+  # Drop instance name only if it was passed as an argument (not auto-detected).
+  # When auto-detected, _INSTANCE is set but there's no corresponding positional arg.
+  if [[ -n "$_INSTANCE" && "${1:-}" == "$_INSTANCE" ]]; then
+    shift
   fi
   check_container
   local workdir="$(pwd)"

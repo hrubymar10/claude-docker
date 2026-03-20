@@ -68,6 +68,7 @@ services:
       CLAUDE_CONFIG_DIR: ${CLAUDE_CONFIG_DIR:-}
       SSH_RELAY_HOST: ${SSH_RELAY_HOST:-}
       SSH_RELAY_PORT: ${SSH_RELAY_PORT:-}
+      SSH_AUTH_SOCK: /tmp/ssh-agent.sock
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -77,4 +78,5 @@ services:
 
 networks:
   claude-internal-net:
+    internal: true
   claude-net:
