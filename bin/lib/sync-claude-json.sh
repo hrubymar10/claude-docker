@@ -16,7 +16,11 @@ if [[ ! "$_SYNC_USER" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
   return 1 2>/dev/null || exit 1
 fi
 _SYNC_HOME="${HOST_HOME:-$HOME}"
-CLAUDE_JSON="${_SYNC_HOME}/.claude.json"
+if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
+  CLAUDE_JSON="${CLAUDE_CONFIG_DIR}/.claude.json"
+else
+  CLAUDE_JSON="${_SYNC_HOME}/.claude.json"
+fi
 CLAUDE_JSON_LOCK="/tmp/.claude-docker-json.lock"
 
 # Portable exclusive file lock on FD 200.

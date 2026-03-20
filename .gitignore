@@ -2,6 +2,7 @@ beeper/beeper
 gpg-keys/*
 !gpg-keys/.gitkeep
 config/docker-compose.local.yml
+config/docker-compose.local.*.yml
 config/claude-notifier
 config/.env
 config/hooks-settings.json

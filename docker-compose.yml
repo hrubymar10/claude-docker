@@ -48,8 +48,8 @@ services:
         HOST_HOME: ${HOST_HOME}
         GO_VERSION: ${GO_VERSION}
     volumes:
-      - ${HOST_HOME}/.claude.json:/run/.claude.json.host:ro
-      - ${HOST_HOME}/.claude:${HOST_HOME}/.claude
+      - ${CLAUDE_JSON_PATH}:/run/.claude.json.host:ro
+      - ${CLAUDE_CONFIG_DIR_HOST}:${CLAUDE_CONFIG_DIR_HOST}
       - ${GOPATH}/pkg:${HOST_HOME}/go/pkg
       - ./gpg-keys:/run/gpg-keys:ro
       - ./config/claude-notifier:/usr/local/bin/claude-notifier:ro
@@ -65,6 +65,7 @@ services:
       GOPATH: ${HOST_HOME}/go
       HOST_USER: ${HOST_USER}
       HOST_HOME: ${HOST_HOME}
+      CLAUDE_CONFIG_DIR: ${CLAUDE_CONFIG_DIR:-}
       SSH_RELAY_HOST: ${SSH_RELAY_HOST:-}
       SSH_RELAY_PORT: ${SSH_RELAY_PORT:-}
     extra_hosts:

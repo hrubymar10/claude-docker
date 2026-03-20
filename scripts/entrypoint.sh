@@ -10,14 +10,20 @@ HOST_HOME="${HOST_HOME:-/home/$HOST_USER}"
 # This avoids the Docker file-bind-mount race condition when multiple
 # `docker exec` sessions write concurrently (inode divergence on rename,
 # or partial writes on in-place updates).
-CLAUDE_JSON="$HOST_HOME/.claude.json"
-CLAUDE_JSON_HOST="/run/.claude.json.host"
 CLAUDE_JSON_LOCK="/tmp/.claude-docker-json.lock"
-if [[ -f "$CLAUDE_JSON_HOST" ]]; then
-  cp "$CLAUDE_JSON_HOST" "$CLAUDE_JSON"
-  chown "$HOST_USER:$HOST_USER" "$CLAUDE_JSON"
+if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
+  # Custom config dir is mounted read-write with .claude.json already in it.
+  # No seed copy needed — the file is the same as the host mount.
+  CLAUDE_JSON="$CLAUDE_CONFIG_DIR/.claude.json"
+else
+  # Default: seed writable copy from read-only host mount.
+  CLAUDE_JSON="$HOST_HOME/.claude.json"
+  CLAUDE_JSON_HOST="/run/.claude.json.host"
+  if [[ -f "$CLAUDE_JSON_HOST" ]]; then
+    cp "$CLAUDE_JSON_HOST" "$CLAUDE_JSON"
+    chown "$HOST_USER:$HOST_USER" "$CLAUDE_JSON"
+  fi
 fi
-# Create the lockfile used by wrapper scripts for sync-back
 touch "$CLAUDE_JSON_LOCK"
 chown "$HOST_USER:$HOST_USER" "$CLAUDE_JSON_LOCK"
 chmod 644 "$CLAUDE_JSON_LOCK"
