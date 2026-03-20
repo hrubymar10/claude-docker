@@ -23,9 +23,17 @@ if [[ -z "$_INSTANCE" ]] && [[ "$_CMD" == "stop" || "$_CMD" == "shell" || "$_CMD
   if [[ "$_count" -eq 1 ]]; then
     _INSTANCE="${_running#claude-}"
   elif [[ "$_count" -gt 1 ]]; then
-    echo "Multiple instances running. Specify which one:" >&2
-    echo "$_running" | sed 's/^claude-/  /' >&2
-    exit 1
+    if command -v fzf &>/dev/null; then
+      _picked=$(echo "$_running" | sed 's/^claude-//' | fzf --prompt="Select instance: " --height=~10) || exit 1
+      _INSTANCE="$_picked"
+      echo "Selected: $_INSTANCE" >&2
+    else
+      echo "Multiple instances running. Specify which one:" >&2
+      echo "$_running" | sed 's/^claude-/  /' >&2
+      echo "" >&2
+      echo "Tip: install fzf for interactive instance selection." >&2
+      exit 1
+    fi
   fi
 fi
 
