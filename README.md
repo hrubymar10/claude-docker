@@ -69,7 +69,8 @@ services:
 ### 5. Start the container
 
 ```bash
-bin/claude-docker-ctrl start
+bin/claude-docker-ctrl start           # generates a random instance name
+bin/claude-docker-ctrl start myproject  # or pick your own name
 ```
 
 This auto-detects your username, UID, Go version, git identity, and GitHub token. No manual `.env` file needed (see `config/.env.example` if you want to override anything).
@@ -80,7 +81,7 @@ This auto-detects your username, UID, Go version, git identity, and GitHub token
 
 ```bash
 cd ~/projects/my-app
-bin/claude-docker-ctrl exec
+bin/claude-docker-ctrl exec myproject
 ```
 
 **VSCode:**
@@ -103,13 +104,15 @@ Add to VSCode `settings.json`:
 ## Commands
 
 ```bash
-bin/claude-docker-ctrl start    # build image, start container
-bin/claude-docker-ctrl stop     # stop container
-bin/claude-docker-ctrl status   # show container status
-bin/claude-docker-ctrl shell    # fish shell into the container
-bin/claude-docker-ctrl exec     # interactive Claude session in container
-bin/claude-docker-ctrl rebuild  # rebuild image from scratch + restart
+bin/claude-docker-ctrl start [name]    # build image, start instance (random name if omitted)
+bin/claude-docker-ctrl stop <name>     # stop instance
+bin/claude-docker-ctrl status [name]   # show instance status (all if omitted)
+bin/claude-docker-ctrl shell <name>    # fish shell into instance
+bin/claude-docker-ctrl exec <name>     # interactive Claude session in instance
+bin/claude-docker-ctrl rebuild <name>  # rebuild image from scratch + restart instance
 ```
+
+Multiple instances can run simultaneously. Each instance creates three containers: `claude-<name>`, `claude-<name>-socket-proxy`, and `claude-<name>-filter-proxy`.
 
 ## GPG Commit Signing (Optional)
 
@@ -140,7 +143,7 @@ The `gpg-keys/` directory is gitignored — keys never get committed.
 │                    ▼                                     │
 │  ┌─ Docker ────────────────────────────────────────┐     │
 │  │                                                  │     │
-│  │  claude-docker          claude-socket-proxy      │     │
+│  │  claude-<name>        claude-<name>-socket-proxy │     │
 │  │  ┌──────────────┐      ┌──────────────────┐     │     │
 │  │  │ Claude Code   │ TCP  │ wollomatic/      │     │     │
 │  │  │ fish, Go,     │─────►│ socket-proxy     │     │     │
@@ -197,6 +200,36 @@ brew install go pyright typescript-language-server
 # gopls
 go install golang.org/x/tools/gopls@latest
 ```
+
+## Multi-Instance Support
+
+You can run multiple isolated instances simultaneously, each with its own name:
+
+```bash
+bin/claude-docker-ctrl start frontend   # start "frontend" instance
+bin/claude-docker-ctrl start backend    # start "backend" instance
+bin/claude-docker-ctrl exec frontend    # Claude session in "frontend"
+bin/claude-docker-ctrl exec backend     # Claude session in "backend"
+bin/claude-docker-ctrl status           # show all running instances
+```
+
+### Wrapper Scripts
+
+The wrapper scripts (`bin/claude-docker`, `bin/claude-docker-vscode-wrapper`, `bin/claude-docker-jetbrains-wrapper`) target a specific container. Set `CLAUDE_DOCKER_CONTAINER` to the instance name:
+
+```bash
+export CLAUDE_DOCKER_CONTAINER=frontend
+```
+
+## CLAUDE_CONFIG_DIR (Profiles)
+
+Use `CLAUDE_CONFIG_DIR` to run instances with separate Claude profiles (auth, settings, memory):
+
+```bash
+CLAUDE_CONFIG_DIR=~/.config/claude-work bin/claude-docker-ctrl start work
+```
+
+The profile name is derived from the directory name after `claude-` in the config path. A matching per-profile compose override is loaded automatically if it exists. For the example above, `config/docker-compose.local.work.yml` would be merged in addition to the base `config/docker-compose.local.yml`.
 
 ## Customization
 

@@ -1,16 +1,16 @@
 # claude-docker
 
-Docker sandbox for running Claude Code in an isolated Linux container that mirrors the macOS host environment.
+Docker sandbox for running Claude Code in an isolated Linux container that mirrors the host environment.
 
 ## Quick Start
 
 ```bash
-bin/claude-docker-ctrl start    # build image, start container
-bin/claude-docker-ctrl stop     # stop container
-bin/claude-docker-ctrl status   # show container status
-bin/claude-docker-ctrl shell    # fish shell into the container
-bin/claude-docker-ctrl exec     # interactive Claude session in container
-bin/claude-docker-ctrl rebuild  # rebuild image from scratch + restart
+bin/claude-docker-ctrl start [name]    # build image, start instance (random name if omitted)
+bin/claude-docker-ctrl stop <name>     # stop instance
+bin/claude-docker-ctrl status [name]   # show instance status (all instances if omitted)
+bin/claude-docker-ctrl shell <name>    # fish shell into instance
+bin/claude-docker-ctrl exec <name>     # interactive Claude session in instance
+bin/claude-docker-ctrl rebuild <name>  # rebuild image from scratch + restart instance
 ```
 
 ## Project Structure
@@ -108,7 +108,7 @@ The `gpg-keys/` directory is gitignored — only `.gitkeep` is committed.
 
 Instead of mounting the host Docker socket directly (which allows full host access via raw API calls), a [wollomatic/socket-proxy](https://github.com/wollomatic/socket-proxy) filters Docker API requests:
 
-- The proxy runs as a sibling container (`claude-socket-proxy`) with the host socket mounted read-only
+- The proxy runs as a sibling container (`claude-<instance>-socket-proxy`) with the host socket mounted read-only
 - Claude's container connects via `DOCKER_HOST=tcp://socket-proxy:2375` — no socket mounted
 - Only whitelisted API endpoints are forwarded (regex-based URL matching per HTTP method)
 - Bind mounts are restricted to allowed directories via `-allowbindmountfrom` (prevents container escape)
@@ -132,6 +132,24 @@ See `SECURITY_ISSUES.md` for known escape vectors.
 - **Go module cache** — `$GOPATH/pkg` is mounted (platform-independent source). Build cache is NOT shared (platform-specific compiled objects)
 - **Local compose override** — user-specific mounts in `config/docker-compose.local.yml` keep the base config shareable
 - **LSP servers pre-installed** — gopls, typescript-language-server, and pyright are included for Claude Code's LSP tool (code navigation in ~50ms vs 30-60s with grep)
+
+## Multi-Instance Support
+
+Multiple containers can run simultaneously, each with its own name. `start` generates a random name if none is provided. All other commands require an instance name.
+
+Container names follow the pattern: `claude-<instance>`, `claude-<instance>-socket-proxy`, `claude-<instance>-filter-proxy`.
+
+Wrapper scripts (`bin/claude-docker`, `bin/claude-docker-vscode-wrapper`, `bin/claude-docker-jetbrains-wrapper`) need the `CLAUDE_DOCKER_CONTAINER` environment variable set to the instance name if not using the default.
+
+## CLAUDE_CONFIG_DIR (Profiles)
+
+Set `CLAUDE_CONFIG_DIR` to use a separate Claude profile with its own auth and settings:
+
+```bash
+CLAUDE_CONFIG_DIR=~/.config/claude-work bin/claude-docker-ctrl start mywork
+```
+
+Per-profile compose overrides are loaded automatically. The profile name is derived from the directory name after `claude-` in the config path. For example, `~/.config/claude-work` yields profile name `work`, which loads `config/docker-compose.local.work.yml` if it exists (in addition to the base `config/docker-compose.local.yml`).
 
 ## Known Limitations
 

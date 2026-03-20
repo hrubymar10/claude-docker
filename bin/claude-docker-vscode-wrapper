@@ -9,6 +9,8 @@
 # that break the protocol and cause the extension to hang.
 set -euo pipefail
 
+# Default container name for backwards compatibility.
+# Set CLAUDE_DOCKER_CONTAINER for named instances (e.g. export CLAUDE_DOCKER_CONTAINER=claude-myinstance).
 CONTAINER="${CLAUDE_DOCKER_CONTAINER:-claude-docker}"
 DOCKER_USER="${CLAUDE_DOCKER_USER:-$(whoami)}"
 WORKDIR="$(pwd)"
