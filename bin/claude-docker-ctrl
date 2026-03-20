@@ -4,13 +4,27 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_DIR="$PROJECT_DIR/config"
-CONTAINER_NAME="claude-docker"
 CONTAINER_USER="${HOST_USER:-$(whoami)}"
-SSH_RELAY_PID_FILE="${HOME}/.claude-docker-ssh-relay.pid"
 SSH_RELAY_PORT=19922
 
+# Instance name: second argument (after command), or random for start
+_CMD="${1:-}"
+_INSTANCE="${2:-}"
+if [[ "$_CMD" == "start" || "$_CMD" == "rebuild" ]] && [[ -z "$_INSTANCE" ]]; then
+  _INSTANCE=$(head -c 4 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 4)
+fi
+if [[ -n "$_INSTANCE" ]]; then
+  [[ "$_INSTANCE" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "Error: instance name must be alphanumeric: $_INSTANCE" >&2; exit 1; }
+  CONTAINER_PREFIX="claude-${_INSTANCE}"
+else
+  CONTAINER_PREFIX="claude-docker"
+fi
+export CONTAINER_PREFIX
+CONTAINER_NAME="$CONTAINER_PREFIX"
+SSH_RELAY_PID_FILE="${HOME}/.${CONTAINER_PREFIX}-ssh-relay.pid"
+
 # ── Compose file list (base + optional local override) ───────────
-COMPOSE_FILES=(-f "$PROJECT_DIR/docker-compose.yml")
+COMPOSE_FILES=(-p "$CONTAINER_PREFIX" -f "$PROJECT_DIR/docker-compose.yml")
 if [[ -f "$CONFIG_DIR/docker-compose.local.yml" ]]; then
   COMPOSE_FILES+=(-f "$CONFIG_DIR/docker-compose.local.yml")
 else
@@ -142,7 +156,8 @@ check_container() {
     || die "Docker is not running."
   local status
   status=$(docker inspect --format '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null) \
-    || die "Container '$CONTAINER_NAME' does not exist. Run: $(basename "$0") start"
+    || die "Container '$CONTAINER_NAME' does not exist. Run: $(basename "$0") start [name]
+Running instances: $(docker ps --filter "label=com.docker.compose.service=claude" --format '{{.Names}}' 2>/dev/null | tr '\n' ' ' || echo 'none')"
   [[ "$status" == "running" ]] \
     || die "Container '$CONTAINER_NAME' is $status. Run: $(basename "$0") start"
 }
@@ -334,10 +349,10 @@ cmd_start() {
   docker compose "${COMPOSE_FILES[@]}" up -d
   start_ssh_relay
   echo ""
-  echo "Container '${CONTAINER_NAME}' is running."
-  echo "  Interactive:  $(basename "$0") exec"
-  echo "  Shell:        $(basename "$0") shell"
-  echo "  VSCode:       configure claudeProcessWrapper to bin/claude-docker"
+  echo "Container '${CONTAINER_NAME}' is running. (instance: ${_INSTANCE})"
+  echo "  Interactive:  $(basename "$0") exec ${_INSTANCE}"
+  echo "  Shell:        $(basename "$0") shell ${_INSTANCE}"
+  echo "  Stop:         $(basename "$0") stop ${_INSTANCE}"
 }
 
 cmd_stop() {
@@ -349,8 +364,8 @@ cmd_stop() {
 
 cmd_status() {
   echo "=== Socket Proxy ==="
-  if docker inspect "claude-socket-proxy" --format '{{.State.Status}}' 2>/dev/null; then
-    docker inspect "claude-socket-proxy" --format 'Name: {{.Name}}  Status: {{.State.Status}}  Started: {{.State.StartedAt}}'
+  if docker inspect "${CONTAINER_PREFIX}-socket-proxy" --format '{{.State.Status}}' 2>/dev/null; then
+    docker inspect "${CONTAINER_PREFIX}-socket-proxy" --format 'Name: {{.Name}}  Status: {{.State.Status}}  Started: {{.State.StartedAt}}'
   else
     echo "Not running"
   fi
@@ -373,11 +388,16 @@ cmd_shell() {
   check_container
   local workdir="$(pwd)"
   check_mount "$workdir"
-  exec docker exec -it -u "$CONTAINER_USER" -w "$workdir" "$CONTAINER_NAME" fish
+  local fish_env=()
+  if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
+    fish_env=(-e XDG_CONFIG_HOME=/tmp/.config)
+  fi
+  exec docker exec -it -u "$CONTAINER_USER" "${fish_env[@]}" -w "$workdir" "$CONTAINER_NAME" fish
 }
 
 cmd_exec() {
-  shift 2>/dev/null || true
+  shift 2>/dev/null || true  # drop command name
+  [[ -n "$_INSTANCE" ]] && shift 2>/dev/null || true  # drop instance name
   check_container
   local workdir="$(pwd)"
   check_mount "$workdir"
@@ -405,15 +425,15 @@ case "${1:-}" in
   beeper-start)   start_beeper ;;
   beeper-stop)    stop_beeper ;;
   *)
-    echo "Usage: $(basename "$0") <command>"
+    echo "Usage: $(basename "$0") <command> [instance-name]"
     echo ""
     echo "Commands:"
-    echo "  start           Build image, start container"
-    echo "  stop            Stop container"
-    echo "  status          Show container status"
-    echo "  shell           Fish shell into the container"
-    echo "  exec            Interactive Claude session in container"
-    echo "  rebuild         Rebuild image from scratch + restart"
+    echo "  start  [name]   Build image, start container (random name if omitted)"
+    echo "  stop   <name>   Stop container"
+    echo "  status [name]   Show container status"
+    echo "  shell  <name>   Fish shell into the container"
+    echo "  exec   <name>   Interactive Claude session in container"
+    echo "  rebuild [name]  Rebuild image from scratch + restart"
     echo "  beeper-start    Start beeper notification server (port 9999)"
     echo "  beeper-stop     Stop beeper notification server"
     exit 1
