@@ -39,6 +39,7 @@ services:
 
   claude:
     container_name: claude-docker
+    init: true
     build:
       context: .
       dockerfile: Dockerfile

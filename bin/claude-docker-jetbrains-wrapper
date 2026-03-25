@@ -50,7 +50,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/sync-claude-json.sh"
 
-docker exec $DOCKER_FLAGS -u "$DOCKER_USER" -w "$WORKDIR" "$CONTAINER" claude "$@"
+docker exec $DOCKER_FLAGS -u "$DOCKER_USER" -w "$WORKDIR" "$CONTAINER" claude-session "$@"
 EXIT_CODE=$?
 
 sync_claude_json "$CONTAINER"

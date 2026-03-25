@@ -21,6 +21,7 @@ bin/claude-docker-ctrl rebuild  # rebuild image from scratch + restart
   - `entrypoint.sh` — runtime setup: socket proxy wait, git credentials, GPG import, user drop
   - `git-wrapper.sh` — blocks `git push` to protected branches. Replaces `/usr/bin/git` to prevent bypass.
   - `docker-wrapper.sh` — allowlists safe docker subcommands, blocks `run`/`build`/`cp`
+  - `claude-session.sh` — process-group wrapper that ensures claude + children (gopls) are killed on disconnect
   - `go-install.sh` — Dockerfile helper to download Go by version
 - `docker-filter-proxy/` — Go reverse proxy that blocks privileged containers, host namespacing, dangerous capabilities
 - `bin/claude-docker` — interactive Claude session in container (`-it`)

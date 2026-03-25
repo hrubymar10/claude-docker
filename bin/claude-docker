@@ -35,7 +35,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/sync-claude-json.sh"
 
 docker exec -it -u "$DOCKER_USER" -w "$WORKDIR" "$CONTAINER" \
-  claude --dangerously-skip-permissions "$@"
+  claude-session --dangerously-skip-permissions "$@"
 EXIT_CODE=$?
 
 sync_claude_json "$CONTAINER"
