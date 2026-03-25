@@ -29,15 +29,20 @@ done
 $MOUNTED || die "Directory '$WORKDIR' is not mounted in container.
 Add it to docker-compose.yml volumes."
 
-# Run Claude, then sync .claude.json back to host.
-# See bin/lib/sync-claude-json.sh for sync semantics (last-writer-wins).
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/sync-claude-json.sh"
+source "$SCRIPT_DIR/lib/session-cleanup.sh"
 
-docker exec -it -u "$DOCKER_USER" -w "$WORKDIR" "$CONTAINER" \
+SESSION_ID="$$-$RANDOM-$(date +%s)"
+start_session_watchdog "$CONTAINER" "$SESSION_ID" "$$"
+
+docker exec -it \
+  -e "CLAUDE_SESSION_ID=$SESSION_ID" \
+  -u "$DOCKER_USER" -w "$WORKDIR" "$CONTAINER" \
   claude-session --dangerously-skip-permissions "$@"
 EXIT_CODE=$?
 
+run_session_cleanup "$CONTAINER" "$SESSION_ID"
 sync_claude_json "$CONTAINER"
 
 exit $EXIT_CODE

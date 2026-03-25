@@ -1,19 +1,27 @@
 #!/bin/sh
 # Wrapper that ensures claude + children (gopls, etc.) are killed when the
-# terminal/exec session disconnects.
+# session ends.
 #
-# Problem: `docker exec -it` allocates a PTY, but when the host terminal
-# closes, claude and its children hold the PTY slave open, preventing SIGHUP
-# delivery. The processes become orphans that accumulate RAM and CPU.
+# Defense in depth — two cleanup mechanisms:
 #
-# Solution: Run claude in background, trap signals, kill the entire process
-# group on any exit. `kill 0` sends SIGTERM to every process in our group.
+# 1. Container-side: trap on signals kills the process group. Works when
+#    signals are delivered explicitly (e.g. host-side wrapper sends SIGHUP).
+#
+# 2. Host-side: the caller (c function / bin/claude-docker) passes
+#    CLAUDE_SESSION_ID env var. This script writes its PID to a known file.
+#    When docker exec exits on the host, the caller reads the PID file and
+#    sends SIGHUP to the process group, triggering cleanup #1.
+
+if [ -n "$CLAUDE_SESSION_ID" ]; then
+    echo $$ > "/tmp/claude-session-${CLAUDE_SESSION_ID}.pid"
+fi
 
 cleanup() {
     trap '' HUP TERM INT EXIT
     kill -TERM 0 2>/dev/null
-    sleep 0.5
+    sleep 2
     kill -KILL 0 2>/dev/null
+    [ -n "$CLAUDE_SESSION_ID" ] && rm -f "/tmp/claude-session-${CLAUDE_SESSION_ID}.pid"
 }
 
 trap cleanup HUP TERM INT EXIT

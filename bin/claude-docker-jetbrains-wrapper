@@ -38,21 +38,29 @@ Add it to config/docker-compose.local.yml volumes."
 
 # Detect TTY: use -it when stdin is a terminal (embedded terminal),
 # use -i only when it's not (stream-json / non-interactive).
-# Unlike the VSCode wrapper (always -i) or claude-docker (always -it),
-# JetBrains can run in both modes depending on context.
 DOCKER_FLAGS="-i"
 if [ -t 0 ]; then
   DOCKER_FLAGS="-it"
 fi
 
-# Run Claude, then sync .claude.json back to host.
-# See bin/lib/sync-claude-json.sh for sync semantics (last-writer-wins).
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/sync-claude-json.sh"
+source "$SCRIPT_DIR/lib/session-cleanup.sh"
 
-docker exec $DOCKER_FLAGS -u "$DOCKER_USER" -w "$WORKDIR" "$CONTAINER" claude-session "$@"
+SESSION_ID="$$-$RANDOM-$(date +%s)"
+
+# Watchdog only needed for TTY mode (terminal close doesn't propagate signals)
+if [ -t 0 ]; then
+  start_session_watchdog "$CONTAINER" "$SESSION_ID" "$$"
+fi
+
+docker exec $DOCKER_FLAGS \
+  -e "CLAUDE_SESSION_ID=$SESSION_ID" \
+  -u "$DOCKER_USER" -w "$WORKDIR" "$CONTAINER" \
+  claude-session "$@"
 EXIT_CODE=$?
 
+run_session_cleanup "$CONTAINER" "$SESSION_ID"
 sync_claude_json "$CONTAINER"
 
 exit $EXIT_CODE
