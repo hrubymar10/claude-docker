@@ -1,20 +1,20 @@
 # claude-docker
 
-Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) in an isolated Docker container instead of directly on your macOS host. The container mirrors your host environment (same paths, UID, shell) so Claude's file references, git configs, and auto-memory all work seamlessly.
+Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) in an isolated Docker container instead of directly on your host. The container mirrors your host environment (same paths, UID, shell) so Claude's file references, git configs, and auto-memory all work seamlessly. Works on both macOS and Linux.
 
 ## Features
 
 - **Isolated execution** — Claude runs in an Alpine container, can't touch your host directly
 - **Docker socket proxy** — filtered API access via [wollomatic/socket-proxy](https://github.com/wollomatic/socket-proxy), prevents container escape
-- **Path mirroring** — `/Users/you/project` inside the container = same path on the host
+- **Path mirroring** — `~/project` inside the container = same path on the host (works with both `/Users/` and `/home/`)
 - **VSCode integration** — works with the Claude Code extension via process wrapper
 - **GPG commit signing** — import keys into the container for signed commits
 - **Pluggable notifications** — customizable `claude-notifier` script for sound/alert integration
 
 ## Prerequisites
 
-- macOS with Apple Silicon (arm64)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) or [OrbStack](https://orbstack.dev/)
+- macOS (Apple Silicon or Intel) or Linux (amd64/arm64)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/), [OrbStack](https://orbstack.dev/) (macOS), or Docker Engine (Linux)
 - [Claude Max subscription](https://claude.ai/) (authenticated via `claude` CLI on host)
 - Go (for building the beep server; optional)
 
@@ -56,7 +56,7 @@ Restart your shell (or `source` the profile) before proceeding. `claude-docker-c
 
 ### 4. Authenticate Claude on the host
 
-If you haven't already, install and authenticate the Claude CLI on your Mac:
+If you haven't already, install and authenticate the Claude CLI on your host:
 
 ```bash
 curl -fsSL https://claude.ai/install.sh | bash
@@ -78,11 +78,11 @@ Edit `config/docker-compose.local.yml` to mount your project directories:
 services:
   claude:
     volumes:
-      - /Users/you/projects:/Users/you/projects
-      - /Users/you/work:/Users/you/work
+      - ${HOST_HOME}/projects:${HOST_HOME}/projects
+      - ${HOST_HOME}/work:${HOST_HOME}/work
 ```
 
-Paths are mirrored — same path inside and outside the container.
+`HOST_HOME` is auto-detected from your `$HOME` — no need to set it manually. Paths are mirrored (same path inside and outside the container).
 
 ### 6. Start the container
 
@@ -151,7 +151,7 @@ The `gpg-keys/` directory is gitignored — keys never get committed.
 ## How It Works
 
 ```
-┌─ Host (macOS) ──────────────────────────────────────────┐
+┌─ Host (macOS / Linux) ──────────────────────────────────┐
 │                                                          │
 │  VSCode ──► claude-docker-vscode-wrapper                 │
 │                    │                                     │
@@ -168,7 +168,7 @@ The `gpg-keys/` directory is gitignored — keys never get committed.
 │  │       │ bind mounts              │ host socket   │     │
 │  └───────┼──────────────────────────┼───────────────┘     │
 │          │                          │                     │
-│     /Users/you/projects      /var/run/docker.sock        │
+│     ~/projects               /var/run/docker.sock        │
 │     ~/.claude/                                            │
 └──────────────────────────────────────────────────────────┘
 ```

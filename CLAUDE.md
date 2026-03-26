@@ -1,6 +1,6 @@
 # claude-docker
 
-Docker sandbox for running Claude Code in an isolated Linux container that mirrors the macOS host environment.
+Docker sandbox for running Claude Code in an isolated Linux container that mirrors the host environment.
 
 ## Quick Start
 
@@ -128,9 +128,9 @@ See `SECURITY_ISSUES.md` for known escape vectors.
 
 ## Design Decisions
 
-- **Path mirroring** — project dirs mounted at the same path as macOS host (`/Users/<user>/...`) so Claude's auto-memory paths, git configs, and file references all align
-- **UID mirroring** — container user has same UID as host (501) so bind-mounted files have correct ownership
-- **Go symlink** — `/opt/go/go.darwin-arm64` → `/usr/local/go` covers any hardcoded macOS Go path references
+- **Path mirroring** — project dirs mounted at the same path as host (`$HOST_HOME/...`) so Claude's auto-memory paths, git configs, and file references all align. Works on both macOS (`/Users/<user>`) and Linux (`/home/<user>`)
+- **UID mirroring** — container user has same UID as host (auto-detected via `id -u`) so bind-mounted files have correct ownership
+- **Go symlink** — `/opt/go/go.{darwin-arm64,linux-amd64,linux-arm64}` → `/usr/local/go` covers hardcoded Go path references from any host platform
 - **`sleep infinity` CMD** — container stays alive, Claude is invoked on-demand via `docker exec`
 - **Go module cache** — `$GOPATH/pkg` is mounted (platform-independent source). Build cache is NOT shared (platform-specific compiled objects)
 - **Local compose override** — user-specific mounts in `config/docker-compose.local.yml` keep the base config shareable
