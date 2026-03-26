@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-cd /Users/martinhruby/xcode/claude-docker
+cd "$(dirname "$0")/.."
 
 PASS=0; FAIL=0
 ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
@@ -32,11 +32,11 @@ check_mount() {
   if [[ "$workdir" == "$src" || "$workdir" == "$src/"* ]]; then result="match"; else result="nomatch"; fi
   if [[ "$result" == "$expect" ]]; then ok "'$workdir' vs '$src'"; else fail "'$workdir' vs '$src' → $result (expected $expect)"; fi
 }
-check_mount "/Users/martinhruby/xcode"       "/Users/martinhruby/xcode"  match
-check_mount "/Users/martinhruby/xcode/sub"   "/Users/martinhruby/xcode"  match
-check_mount "/Users/martinhrubyx"            "/Users/martinhruby"        nomatch
-check_mount "/Users/martinhruby-evil"        "/Users/martinhruby"        nomatch
-check_mount "/etc/passwd"                    "/Users/martinhruby"        nomatch
+check_mount "$HOME/projects"                 "$HOME/projects"            match
+check_mount "$HOME/projects/sub"             "$HOME/projects"            match
+check_mount "${HOME}x"                       "$HOME"                     nomatch
+check_mount "$HOME-evil"                     "$HOME"                     nomatch
+check_mount "/etc/passwd"                    "$HOME"                     nomatch
 
 echo ""
 echo "═══ Sync function: lockf/flock (macOS compatibility) ═══"
@@ -46,10 +46,10 @@ if echo "$OUTPUT" | grep -q "flock: command not found"; then
 elif echo "$OUTPUT" | grep -q "Warning"; then
   fail "unexpected warning: $OUTPUT"
 else
-  ok "sync completes cleanly (lockf on macOS)"
+  ok "sync completes cleanly (flock on Linux, lockf on macOS)"
 fi
 
-tmp_count=$(find /Users/martinhruby -maxdepth 1 -name '.claude.json.tmp.*' 2>/dev/null | wc -l | tr -d ' ')
+tmp_count=$(find "$HOME" -maxdepth 1 -name '.claude.json.tmp.*' 2>/dev/null | wc -l | tr -d ' ')
 if [[ "$tmp_count" -eq 0 ]]; then ok "no temp files left behind"; else fail "$tmp_count temp file(s) left behind"; fi
 
 echo ""
@@ -97,8 +97,8 @@ if [[ "$SEED_MOUNT" == "ro" ]]; then
 
   # Write a sentinel value to container's writable copy
   SENTINEL="test_$(date +%s)"
-  docker exec -u martinhruby claude-docker \
-    bash -c "python3 -c \"import json,sys; d=json.load(open('/Users/martinhruby/.claude.json')); d['_test_sentinel']='$SENTINEL'; json.dump(d,open('/Users/martinhruby/.claude.json','w'))\"" \
+  docker exec -u "$(whoami)" claude-docker \
+    bash -c "python3 -c \"import json,sys; d=json.load(open('$HOME/.claude.json')); d['_test_sentinel']='$SENTINEL'; json.dump(d,open('$HOME/.claude.json','w'))\"" \
     2>/dev/null
   # Sync back to host
   CONTAINER="claude-docker" bash -c 'source bin/lib/sync-claude-json.sh && sync_claude_json "$CONTAINER"'

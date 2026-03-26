@@ -1,11 +1,12 @@
 # Local volume mounts — copy to docker-compose.local.yml and edit.
 # Add your project directories here. Paths are mirrored (same path inside container).
+# HOST_HOME is auto-detected (e.g. /home/you on Linux, /Users/you on macOS).
 # This file is gitignored so your local config stays private.
 services:
   claude:
     volumes:
-      - /Users/${HOST_USER}/projects:/Users/${HOST_USER}/projects
-      # - /Users/${HOST_USER}/work:/Users/${HOST_USER}/work
+      - ${HOST_HOME}/projects:${HOST_HOME}/projects
+      # - ${HOST_HOME}/work:${HOST_HOME}/work
 
 # Extra environment variables — passed through from host into the container.
 # Use ${VAR:-} syntax to forward host env vars (empty string if unset).
@@ -17,6 +18,6 @@ services:
 # Supports glob patterns. Directories get empty read-only tmpfs overlays,
 # files get /dev/null bind-mounts. Claude cannot see or read excluded paths.
 # x-excludes:
-#   - /Users/${HOST_USER}/projects/.env
-#   - /Users/${HOST_USER}/projects/*/credentials.json
-#   - /Users/${HOST_USER}/work/secrets/
+#   - ${HOST_HOME}/projects/.env
+#   - ${HOST_HOME}/projects/*/credentials.json
+#   - ${HOST_HOME}/work/secrets/
