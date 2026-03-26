@@ -48,7 +48,6 @@ services:
         HOST_USER: ${HOST_USER}
         GO_VERSION: ${GO_VERSION}
     volumes:
-      - /Users/${HOST_USER}/.claude.json:/run/.claude.json.host:ro
       - /Users/${HOST_USER}/.claude:/Users/${HOST_USER}/.claude
       - ${GOPATH}/pkg:/Users/${HOST_USER}/go/pkg
       - ./gpg-keys:/run/gpg-keys:ro

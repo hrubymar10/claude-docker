@@ -3,24 +3,6 @@ set -euo pipefail
 
 HOST_USER="${HOST_USER:-user}"
 
-# ── Seed .claude.json from read-only host mount ─────────────────
-# The host file is bind-mounted read-only at /run/.claude.json.host.
-# We copy it to the real path so Claude Code gets a normal writable file.
-# This avoids the Docker file-bind-mount race condition when multiple
-# `docker exec` sessions write concurrently (inode divergence on rename,
-# or partial writes on in-place updates).
-CLAUDE_JSON="/Users/$HOST_USER/.claude.json"
-CLAUDE_JSON_HOST="/run/.claude.json.host"
-CLAUDE_JSON_LOCK="/tmp/.claude-docker-json.lock"
-if [[ -f "$CLAUDE_JSON_HOST" ]]; then
-  cp "$CLAUDE_JSON_HOST" "$CLAUDE_JSON"
-  chown "$HOST_USER:$HOST_USER" "$CLAUDE_JSON"
-fi
-# Create the lockfile used by wrapper scripts for sync-back
-touch "$CLAUDE_JSON_LOCK"
-chown "$HOST_USER:$HOST_USER" "$CLAUDE_JSON_LOCK"
-chmod 644 "$CLAUDE_JSON_LOCK"
-
 # ── Wait for Docker socket proxy ─────────────────────────────────
 if [[ -n "${DOCKER_HOST:-}" ]]; then
   echo "Waiting for Docker socket proxy..."

@@ -36,7 +36,6 @@ $MOUNTED || die "Directory '$WORKDIR' is not mounted in container."
 shift  # discard host claude binary path
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/lib/sync-claude-json.sh"
 source "$SCRIPT_DIR/lib/session-cleanup.sh"
 
 SESSION_ID="$$-$RANDOM-$(date +%s)"
@@ -51,6 +50,5 @@ docker exec -i \
 EXIT_CODE=$?
 
 run_session_cleanup "$CONTAINER" "$SESSION_ID"
-sync_claude_json "$CONTAINER"
 
 exit $EXIT_CODE
