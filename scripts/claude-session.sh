@@ -16,6 +16,15 @@ if [ -n "$CLAUDE_SESSION_ID" ]; then
     echo $$ > "/tmp/claude-session-${CLAUDE_SESSION_ID}.pid"
 fi
 
+# Non-TTY (VSCode/pipe): backgrounding claude loses stdin, so exec directly.
+# Cleanup isn't needed — non-TTY docker exec dies with the parent process,
+# and tini (init: true) reaps any orphaned children.
+if ! [ -t 0 ]; then
+    exec claude "$@"
+fi
+
+# TTY (interactive terminal): background claude so we can trap signals and
+# kill the entire process group on disconnect (prevents orphaned gopls etc.)
 cleanup() {
     trap '' HUP TERM INT EXIT
     kill -TERM 0 2>/dev/null
