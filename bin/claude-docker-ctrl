@@ -350,7 +350,7 @@ cmd_start() {
   echo "Container '${CONTAINER_NAME}' is running."
   echo "  Interactive:  $(basename "$0") exec"
   echo "  Shell:        $(basename "$0") shell"
-  echo "  VSCode:       configure claudeProcessWrapper to bin/claude-docker"
+  echo "  VSCode:       configure claudeProcessWrapper to bin/claude-docker-vscode-wrapper"
 }
 
 cmd_stop() {
