@@ -2,21 +2,53 @@
 set -euo pipefail
 
 HOST_USER="${HOST_USER:-user}"
+HOST_HOME="${HOST_HOME:-/home/$HOST_USER}"
+
+# ── Seed .claude.json from read-only host mount ─────────────────
+# The host file is bind-mounted read-only at /run/.claude.json.host.
+# We copy it once at container start to a writable location inside
+# the container. The sync-claude-json.sh script handles copying
+# changes back to the host periodically.
+# This avoids the Docker file-bind-mount race condition when multiple
+# `docker exec` sessions write concurrently (inode divergence on rename,
+# or partial writes on in-place updates).
+CLAUDE_JSON_LOCK="/tmp/.claude-docker-json.lock"
+if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
+  # Custom config dir is mounted read-write with .claude.json already in it.
+  # No seed copy needed — the file is the same as the host mount.
+  CLAUDE_JSON="$CLAUDE_CONFIG_DIR/.claude.json"
+else
+  # Default: seed writable copy from read-only host mount.
+  CLAUDE_JSON="$HOST_HOME/.claude.json"
+  CLAUDE_JSON_HOST="/run/.claude.json.host"
+  if [[ -f "$CLAUDE_JSON_HOST" ]]; then
+    cp "$CLAUDE_JSON_HOST" "$CLAUDE_JSON"
+    chown "$HOST_USER:$HOST_USER" "$CLAUDE_JSON"
+  fi
+fi
+touch "$CLAUDE_JSON_LOCK"
+chown "$HOST_USER:$HOST_USER" "$CLAUDE_JSON_LOCK"
+chmod 644 "$CLAUDE_JSON_LOCK"
 
 # ── Wait for Docker socket proxy ─────────────────────────────────
 if [[ -n "${DOCKER_HOST:-}" ]]; then
   echo "Waiting for Docker socket proxy..."
+  _proxy_ready=false
   for i in $(seq 1 30); do
     if /usr/bin/docker info >/dev/null 2>&1; then
+      _proxy_ready=true
       break
     fi
     sleep 1
   done
+  if ! $_proxy_ready; then
+    echo "Warning: Docker socket proxy not available after 30s" >&2
+  fi
 fi
 
 # ── Git credential helper (GITHUB_TOKEN) ─────────────────────────
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-  CRED_HELPER="/Users/$HOST_USER/.git-credential-github"
+  CRED_HELPER="$HOST_HOME/.git-credential-github"
   printf '#!/bin/sh\nprintf "username=oauth2\\npassword=%%s\\n" "$GITHUB_TOKEN"\n' > "$CRED_HELPER"
   chmod 700 "$CRED_HELPER"
   chown "$HOST_USER:$HOST_USER" "$CRED_HELPER"
@@ -28,7 +60,7 @@ fi
 
 # ── General git credentials (non-GitHub) ──────────────────────────
 if [[ -n "${GIT_AUTH_USER:-}" && -n "${GIT_AUTH_TOKEN:-}" ]]; then
-  CRED_HELPER="/Users/$HOST_USER/.git-credential-generic"
+  CRED_HELPER="$HOST_HOME/.git-credential-generic"
   # Write credentials directly (not env var refs) since GIT_AUTH_USER/TOKEN
   # are only available during entrypoint, not in docker exec sessions.
   # Use #!/bin/bash: printf '%q' produces bash-specific quoting (e.g. user\'name)
@@ -50,12 +82,13 @@ fi
 
 # ── Docker registry auth (ghcr.io) ──────────────────────────────
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-  DOCKER_CONFIG="/Users/$HOST_USER/.docker"
+  DOCKER_CONFIG="$HOST_HOME/.docker"
   mkdir -p "$DOCKER_CONFIG"
-  AUTH=$(echo -n "oauth2:$GITHUB_TOKEN" | base64)
+  AUTH=$(printf '%s' "oauth2:$GITHUB_TOKEN" | base64)
   cat > "$DOCKER_CONFIG/config.json" <<EOF
 {"auths":{"ghcr.io":{"auth":"$AUTH"}}}
 EOF
+  chmod 600 "$DOCKER_CONFIG/config.json"
   chown -R "$HOST_USER:$HOST_USER" "$DOCKER_CONFIG"
 fi
 
@@ -63,9 +96,8 @@ fi
 if [[ -n "${SSH_RELAY_HOST:-}" && -n "${SSH_RELAY_PORT:-}" ]]; then
   SSH_SOCK="/tmp/ssh-agent.sock"
   rm -f "$SSH_SOCK"
-  gosu "$HOST_USER" socat UNIX-LISTEN:"$SSH_SOCK",fork \
+  gosu "$HOST_USER" socat UNIX-LISTEN:"$SSH_SOCK",fork,mode=0600 \
     TCP:"$SSH_RELAY_HOST":"$SSH_RELAY_PORT" &
-  export SSH_AUTH_SOCK="$SSH_SOCK"
   echo "SSH agent forwarding enabled ($SSH_RELAY_HOST:$SSH_RELAY_PORT)"
 fi
 
@@ -74,7 +106,7 @@ fi
 GPG_KEY_DIR="/run/gpg-keys"
 if compgen -G "$GPG_KEY_DIR"/*.asc >/dev/null 2>&1 || \
    compgen -G "$GPG_KEY_DIR"/*.gpg >/dev/null 2>&1; then
-  GNUPG_DIR="/Users/$HOST_USER/.gnupg"
+  GNUPG_DIR="$HOST_HOME/.gnupg"
   gosu "$HOST_USER" mkdir -p "$GNUPG_DIR"
   echo "allow-loopback-pinentry" > "$GNUPG_DIR/gpg-agent.conf"
   echo "pinentry-mode loopback"  > "$GNUPG_DIR/gpg.conf"

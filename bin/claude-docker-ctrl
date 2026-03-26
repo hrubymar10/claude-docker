@@ -31,7 +31,7 @@ if [[ -f "$HOME/CLAUDE.md" ]]; then
 services:
   claude:
     volumes:
-      - ${HOME}/CLAUDE.md:${HOME}/CLAUDE.md:ro
+      - ${HOME}/CLAUDE.md:${HOST_HOME:-${HOME}}/CLAUDE.md:ro
 YAMLEOF
   COMPOSE_FILES+=(-f "$CLAUDEMD_OVERRIDE")
 fi
@@ -43,7 +43,7 @@ if [[ -f "$HOME/.ssh/known_hosts" ]]; then
 services:
   claude:
     volumes:
-      - ${HOME}/.ssh/known_hosts:/Users/${HOST_USER:-$(whoami)}/.ssh/known_hosts:ro
+      - ${HOME}/.ssh/known_hosts:${HOST_HOME:-${HOME}}/.ssh/known_hosts:ro
 YAMLEOF
   COMPOSE_FILES+=(-f "$SSH_OVERRIDE")
 fi
@@ -67,6 +67,8 @@ apply_excludes() {
         local pat="${BASH_REMATCH[1]}"
         pat="${pat//\$\{HOST_USER\}/$HOST_USER}"
         pat="${pat//\$HOST_USER/$HOST_USER}"
+        pat="${pat//\$\{HOST_HOME\}/$HOST_HOME}"
+        pat="${pat//\$HOST_HOME/$HOST_HOME}"
         pat="${pat//\$\{HOME\}/$HOME}"
         pat="${pat//\$HOME/$HOME}"
         patterns+=("$pat")
@@ -117,7 +119,7 @@ apply_excludes() {
   fi
 
   COMPOSE_FILES+=(-f "$tmpfile")
-  echo "Exclude masking: $count paths hidden"
+  echo "Exclude masking: $count paths hidden" >&2
 }
 
 die() { echo "Error: $1" >&2; exit 1; }
@@ -177,22 +179,30 @@ check_mount() {
   local mounts
   mounts=$(docker inspect --format '{{range .Mounts}}{{.Source}} {{end}}' "$CONTAINER_NAME")
   for src in $mounts; do
-    [[ "$workdir" == "$src"* ]] && return 0
+    [[ "$workdir" == "$src" || "$workdir" == "$src/"* ]] && return 0
   done
   die "Directory '$workdir' is not mounted in container.
-Add it to config/docker-compose.local.yml volumes."
+Add it to config/docker-compose.local.yml volumes, e.g.:
+  - \${HOST_HOME}/${workdir##*/}:\${HOST_HOME}/${workdir##*/}"
 }
 
 # ── Export environment for docker compose ────────────────────────
 setup_env() {
-  # Host user identity
-  export HOST_USER HOST_UID
+  # Host user identity and home directory
+  export HOST_USER HOST_UID HOST_HOME
   HOST_USER="${HOST_USER:-$(whoami)}"
   HOST_UID="${HOST_UID:-$(id -u)}"
+  HOST_HOME="${HOST_HOME:-$HOME}"
+  [[ "$HOST_HOME" == /* ]] || die "HOST_HOME must be an absolute path: $HOST_HOME"
+
+  # Claude config directory
+  export CLAUDE_CONFIG_DIR_HOST CLAUDE_JSON_PATH
+  CLAUDE_CONFIG_DIR_HOST="${CLAUDE_CONFIG_DIR:-$HOST_HOME/.claude}"
+  CLAUDE_JSON_PATH="${CLAUDE_CONFIG_DIR:-$HOST_HOME}/.claude.json"
 
   # Go version from host
   export GO_VERSION
-  GO_VERSION=$(go version 2>/dev/null | awk '{print $3}') || true
+  GO_VERSION=$(go version 2>/dev/null | awk '{print $3}' | sed 's/\(go[0-9]*\.[0-9]*\.[0-9]*\).*/\1/') || true
   if [[ -z "$GO_VERSION" ]]; then
     echo "Warning: go not found on host, using default go1.26.0" >&2
     GO_VERSION="go1.26.0"
@@ -212,11 +222,11 @@ setup_env() {
 
   # Git identity
   if [[ -z "${GIT_USER_NAME:-}" ]]; then
-    GIT_USER_NAME=$(/usr/bin/git config user.name 2>/dev/null) || true
+    GIT_USER_NAME=$(git config user.name 2>/dev/null) || true
     export GIT_USER_NAME
   fi
   if [[ -z "${GIT_USER_EMAIL:-}" ]]; then
-    GIT_USER_EMAIL=$(/usr/bin/git config user.email 2>/dev/null) || true
+    GIT_USER_EMAIL=$(git config user.email 2>/dev/null) || true
     export GIT_USER_EMAIL
   fi
 

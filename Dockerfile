@@ -57,11 +57,12 @@ RUN ARCH=$(uname -m) \
     && chmod +x /usr/local/bin/terragrunt
 
 # ── Host-mirrored user ──────────────────────────────────────────
-ARG HOST_UID=501
+ARG HOST_UID=1000
 ARG HOST_USER=user
-RUN mkdir -p /Users \
+ARG HOST_HOME=/home/${HOST_USER}
+RUN mkdir -p "$(dirname ${HOST_HOME})" \
     && adduser -D -u ${HOST_UID} \
-    -h /Users/${HOST_USER} \
+    -h ${HOST_HOME} \
     -s /usr/bin/fish \
     ${HOST_USER} \
     && echo "${HOST_USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
@@ -70,7 +71,7 @@ RUN mkdir -p /Users \
 USER ${HOST_USER}
 RUN curl -fsSL https://claude.ai/install.sh | bash
 USER root
-ENV PATH="/Users/${HOST_USER}/.local/bin:${PATH}"
+ENV PATH="${HOST_HOME}/.local/bin:${PATH}"
 ENV DISABLE_AUTOUPDATER=1
 
 # ── LSP servers (for Claude Code LSP tool) ────────────────────────
