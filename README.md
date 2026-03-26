@@ -36,7 +36,25 @@ export PATH="/path/to/claude-docker/bin:$PATH"
 
 This makes `claude-docker-ctrl`, `claude-docker`, and the VSCode wrapper available globally.
 
-### 3. Authenticate Claude on the host
+### 3. Set `CLAUDE_CONFIG_DIR`
+
+Claude Code stores its config in `~/.claude.json`. Docker file-level bind mounts break on atomic writes ([moby/moby#6011](https://github.com/moby/moby/issues/6011)), causing config corruption on Docker Desktop. Setting `CLAUDE_CONFIG_DIR` moves the config file inside `~/.claude/`, which is mounted as a directory — immune to this issue.
+
+**First, quit all running Claude Code instances** (VSCode, terminal, JetBrains).
+
+Then migrate the config file and set the env var:
+
+```bash
+# Move config into the directory (skip this if ~/.claude.json doesn't exist yet)
+mv ~/.claude.json ~/.claude/.claude.json
+
+# Add to your shell profile (~/.zshrc, ~/.bashrc, etc.)
+export CLAUDE_CONFIG_DIR="$HOME/.claude"
+```
+
+Restart your shell (or `source` the profile) before proceeding. `claude-docker-ctrl` will refuse to start without this variable set.
+
+### 4. Authenticate Claude on the host
 
 If you haven't already, install and authenticate the Claude CLI on your Mac:
 
@@ -46,9 +64,9 @@ claude
 # Follow the authentication flow
 ```
 
-This creates `~/.claude/` and `~/.claude.json` which are mounted into the container.
+This creates `~/.claude/` which is mounted into the container.
 
-### 4. Configure your project mounts
+### 5. Configure your project mounts
 
 ```bash
 cp config/docker-compose.local.example.yml config/docker-compose.local.yml
@@ -66,7 +84,7 @@ services:
 
 Paths are mirrored — same path inside and outside the container.
 
-### 5. Start the container
+### 6. Start the container
 
 ```bash
 bin/claude-docker-ctrl start
@@ -74,7 +92,7 @@ bin/claude-docker-ctrl start
 
 This auto-detects your username, UID, Go version, git identity, and GitHub token. No manual `.env` file needed (see `config/.env.example` if you want to override anything).
 
-### 6. Use Claude
+### 7. Use Claude
 
 **Terminal:**
 

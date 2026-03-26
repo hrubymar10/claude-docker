@@ -39,7 +39,7 @@ bin/claude-docker-ctrl rebuild  # rebuild image from scratch + restart
 
 ## Volume Mounts
 
-Base `docker-compose.yml` mounts only essentials (Claude auth, Go cache, GPG keys). Project directories go in `config/docker-compose.local.yml`:
+Base `docker-compose.yml` mounts only essentials (`$CLAUDE_CONFIG_DIR`, Go cache, GPG keys). Project directories go in `config/docker-compose.local.yml`:
 
 ```bash
 cp config/docker-compose.local.example.yml config/docker-compose.local.yml
@@ -80,6 +80,8 @@ The wrapper auto-detects TTY: uses `-it` in the embedded terminal, `-i` only for
 ## Authentication
 
 Claude Max subscription (not API key). Auth tokens live in `~/.claude/` on the host, which is bind-mounted into the container at the same path. No `ANTHROPIC_API_KEY` needed.
+
+**Requires `CLAUDE_CONFIG_DIR`** — must be exported in your shell profile (e.g. `export CLAUDE_CONFIG_DIR="$HOME/.claude"`). This moves `.claude.json` inside the directory mount, avoiding Docker single-file bind mount corruption ([moby/moby#6011](https://github.com/moby/moby/issues/6011)). See README for migration steps.
 
 ### Git Authentication
 

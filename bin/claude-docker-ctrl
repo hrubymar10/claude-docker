@@ -122,6 +122,45 @@ apply_excludes() {
 
 die() { echo "Error: $1" >&2; exit 1; }
 
+# ── CLAUDE_CONFIG_DIR pre-flight check ───────────────────────────
+# Docker file-level bind mounts break on atomic writes (moby/moby#6011).
+# CLAUDE_CONFIG_DIR moves .claude.json inside ~/.claude/ (a directory
+# mount), which handles renames correctly on all Docker runtimes.
+check_claude_config_dir() {
+  [[ -n "${CLAUDE_CONFIG_DIR:-}" ]] && return 0
+
+  cat >&2 <<'BANNER'
+
+  CLAUDE_CONFIG_DIR is not set
+  ================================================================
+
+  claude-docker requires CLAUDE_CONFIG_DIR to be exported.
+  This avoids Docker file-bind-mount issues that cause
+  .claude.json corruption (moby/moby#6011).
+
+  Follow these steps:
+
+  1. Quit ALL running Claude Code instances first
+     (VSCode, terminal, JetBrains -- all of them)
+
+  2. Move your config file into the config directory:
+
+     mv ~/.claude.json ~/.claude/.claude.json
+
+     WARNING: Skip this and you lose settings/session history!
+
+  3. Add to your shell profile (~/.zshrc, ~/.bashrc, etc.):
+
+     export CLAUDE_CONFIG_DIR="$HOME/.claude"
+
+  4. Restart your shell (or source the profile), then re-run.
+
+  ================================================================
+
+BANNER
+  exit 1
+}
+
 # ── Pre-flight checks for commands that need a running container ─
 check_container() {
   docker info >/dev/null 2>&1 \
@@ -300,6 +339,7 @@ ssh_relay_status() {
 
 # ── Commands ─────────────────────────────────────────────────────
 cmd_start() {
+  check_claude_config_dir
   setup_env
   echo "Building image (GO_VERSION=${GO_VERSION})..."
   docker compose "${COMPOSE_FILES[@]}" build
@@ -314,6 +354,7 @@ cmd_start() {
 }
 
 cmd_stop() {
+  check_claude_config_dir
   setup_env
   echo "Stopping container..."
   docker compose "${COMPOSE_FILES[@]}" down
@@ -343,6 +384,7 @@ cmd_status() {
 }
 
 cmd_shell() {
+  check_claude_config_dir
   check_container
   local workdir="$(pwd)"
   check_mount "$workdir"
@@ -351,6 +393,7 @@ cmd_shell() {
 
 cmd_exec() {
   shift 2>/dev/null || true
+  check_claude_config_dir
   check_container
   local workdir="$(pwd)"
   check_mount "$workdir"
@@ -358,6 +401,7 @@ cmd_exec() {
 }
 
 cmd_rebuild() {
+  check_claude_config_dir
   setup_env
   echo "Rebuilding image from scratch (GO_VERSION=${GO_VERSION})..."
   docker compose "${COMPOSE_FILES[@]}" build --no-cache
