@@ -15,8 +15,8 @@ func main() {
 	http.HandleFunc("GET /beep", beep)
 	http.HandleFunc("GET /play/{category}", beep)
 
-	log.Println("Beeper listening on http://127.0.0.1:9999")
-	if err := http.ListenAndServe("127.0.0.1:9999", nil); err != nil {
+	log.Println("Beeper listening on http://0.0.0.0:9999")
+	if err := http.ListenAndServe("0.0.0.0:9999", nil); err != nil {
 		log.Fatal(err)
 	}
 }
