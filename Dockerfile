@@ -29,7 +29,12 @@ RUN apk add --no-cache \
     gosu \
     python3 \
     py3-pip \
-    socat
+    socat \
+    aws-cli \
+    docker-cli-buildx
+
+# ── uv / uvx (Python package runner) ────────────────────────────────
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
 # ── Go + gopls ────────────────────────────────────────────────────
 ARG GO_VERSION=go1.26.0
