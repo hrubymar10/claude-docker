@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-ALLOWED="ps logs inspect stats top compose start stop restart kill pause unpause exec images network volume port attach version info login logout pull"
+ALLOWED="ps logs inspect stats top compose start stop restart kill pause unpause exec images network volume port attach version info login logout pull buildx"
 
 cmd="${1:-}"
 
