@@ -81,7 +81,7 @@ RUN mkdir -p "$(dirname ${HOST_HOME})" \
 USER ${HOST_USER}
 RUN curl -fsSL https://claude.ai/install.sh | bash
 USER root
-ENV PATH="${HOST_HOME}/.local/bin:${PATH}"
+ENV PATH="${HOST_HOME}/.local/bin:/usr/local/custom-bin:${PATH}"
 ENV DISABLE_AUTOUPDATER=1
 
 # ── LSP servers (for Claude Code LSP tool) ────────────────────────

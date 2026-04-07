@@ -6,3 +6,5 @@ config/claude-notifier
 config/.env
 config/hooks-settings.json
 config/remote-hook.sh
+config/custom-bin/*
+!config/custom-bin/.gitkeep

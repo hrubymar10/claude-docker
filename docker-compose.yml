@@ -55,6 +55,7 @@ services:
       - ${GOPATH}/pkg:${HOST_HOME}/go/pkg
       - ./gpg-keys:/run/gpg-keys:ro
       - ./config/claude-notifier:/usr/local/bin/claude-notifier:ro
+      - ./config/custom-bin:/usr/local/custom-bin:ro
     working_dir: ${HOST_HOME}
     environment:
       DOCKER_HOST: tcp://claude-filter-proxy:2375
