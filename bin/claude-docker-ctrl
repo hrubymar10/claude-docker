@@ -188,6 +188,21 @@ Add it to config/docker-compose.local.yml volumes, e.g.:
 
 # ── Export environment for docker compose ────────────────────────
 setup_env() {
+  # Load config/.env if present (values don't override existing env vars)
+  if [[ -f "$CONFIG_DIR/.env" ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      # Skip comments and blank lines
+      [[ "$line" =~ ^[[:space:]]*# ]] && continue
+      [[ -z "${line// /}" ]] && continue
+      local key="${line%%=*}"
+      local val="${line#*=}"
+      # Only set if not already in environment
+      if [[ -z "${!key:-}" ]]; then
+        export "$key=$val"
+      fi
+    done < "$CONFIG_DIR/.env"
+  fi
+
   # Host user identity and home directory
   export HOST_USER HOST_UID HOST_HOME
   HOST_USER="${HOST_USER:-$(whoami)}"
@@ -233,6 +248,39 @@ setup_env() {
   # GONOSUMDB defaults to GOPRIVATE if not explicitly set
   if [[ -z "${GONOSUMDB:-}" && -n "${GOPRIVATE:-}" ]]; then
     export GONOSUMDB="$GOPRIVATE"
+  fi
+
+  # Container shell — auto-detect from host $SHELL, default to /bin/bash
+  # Available: ash/sh (busybox), bash, dash, elvish, fish, loksh, mksh, nushell, oksh, tcsh, yash, zsh
+  export CONTAINER_SHELL
+  # Resolve shell name (short or full path) to container path
+  resolve_shell() {
+    local name="$1"
+    # Strip to basename if a full path was given
+    name=$(basename "$name")
+    case "$name" in
+      ash)           echo "/bin/ash" ;;
+      sh)            echo "/bin/sh" ;;
+      bash)          echo "/bin/bash" ;;
+      dash)          echo "/usr/bin/dash" ;;
+      elvish)        echo "/usr/bin/elvish" ;;
+      fish)          echo "/usr/bin/fish" ;;
+      ksh|loksh)     echo "/bin/ksh" ;;
+      mksh)          echo "/bin/mksh" ;;
+      nu|nushell)    echo "/usr/bin/nu" ;;
+      oksh)          echo "/usr/bin/oksh" ;;
+      tcsh|csh)      echo "/bin/tcsh" ;;
+      yash)          echo "/usr/bin/yash" ;;
+      zsh)           echo "/bin/zsh" ;;
+      *)             echo "/bin/bash" ;;
+    esac
+  }
+  if [[ -n "${CONTAINER_SHELL:-}" ]]; then
+    # User set it explicitly — resolve in case it's a short name like "zsh"
+    CONTAINER_SHELL=$(resolve_shell "$CONTAINER_SHELL")
+  else
+    # Auto-detect from host $SHELL
+    CONTAINER_SHELL=$(resolve_shell "${SHELL:-bash}")
   fi
 
   # SSH agent forwarding — if host has SSH_AUTH_SOCK, set relay env vars
@@ -353,7 +401,7 @@ cmd_start() {
   setup_env
   echo "Building image (GO_VERSION=${GO_VERSION})..."
   docker compose "${COMPOSE_FILES[@]}" build
-  echo "Starting container..."
+  echo "Starting container (shell: ${CONTAINER_SHELL})..."
   docker compose "${COMPOSE_FILES[@]}" up -d
   start_ssh_relay
   echo ""
@@ -398,7 +446,10 @@ cmd_shell() {
   check_container
   local workdir="$(pwd)"
   check_mount "$workdir"
-  exec docker exec -it -u "$CONTAINER_USER" -w "$workdir" "$CONTAINER_NAME" fish
+  # Resolve shell: env var > container's CONTAINER_SHELL env > /bin/bash
+  local shell_cmd
+  shell_cmd=$(docker exec "$CONTAINER_NAME" printenv CONTAINER_SHELL 2>/dev/null) || shell_cmd="/bin/bash"
+  exec docker exec -it -u "$CONTAINER_USER" -w "$workdir" "$CONTAINER_NAME" "$shell_cmd"
 }
 
 cmd_exec() {
@@ -438,7 +489,7 @@ case "${1:-}" in
     echo "  start           Build image, start container"
     echo "  stop            Stop container"
     echo "  status          Show container status"
-    echo "  shell           Fish shell into the container"
+    echo "  shell           Shell into the container (auto-detects from host \$SHELL)"
     echo "  exec            Interactive Claude session in container"
     echo "  rebuild         Rebuild image from scratch + restart"
     echo "  beeper-start    Start beeper notification server (port 9999)"

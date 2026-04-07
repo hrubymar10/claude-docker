@@ -8,7 +8,7 @@ Docker sandbox for running Claude Code in an isolated Linux container that mirro
 bin/claude-docker-ctrl start    # build image, start container
 bin/claude-docker-ctrl stop     # stop container
 bin/claude-docker-ctrl status   # show container status
-bin/claude-docker-ctrl shell    # fish shell into the container
+bin/claude-docker-ctrl shell    # shell into the container (auto-detects from host $SHELL)
 bin/claude-docker-ctrl exec     # interactive Claude session in container
 bin/claude-docker-ctrl rebuild  # rebuild image from scratch + restart
 ```

@@ -48,6 +48,7 @@ services:
         HOST_USER: ${HOST_USER}
         HOST_HOME: ${HOST_HOME}
         GO_VERSION: ${GO_VERSION}
+        CONTAINER_SHELL: ${CONTAINER_SHELL:-/bin/bash}
     volumes:
       - ${CLAUDE_JSON_PATH}:/run/.claude.json.host:ro
       - ${CLAUDE_CONFIG_DIR_HOST}:${CLAUDE_CONFIG_DIR_HOST}
@@ -70,6 +71,7 @@ services:
       SSH_RELAY_HOST: ${SSH_RELAY_HOST:-}
       SSH_RELAY_PORT: ${SSH_RELAY_PORT:-}
       SSH_AUTH_SOCK: /tmp/ssh-agent.sock
+      CONTAINER_SHELL: ${CONTAINER_SHELL:-/bin/bash}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

@@ -18,7 +18,16 @@ RUN apk add --no-cache \
     g++ \
     build-base \
     file \
+    dash \
+    elvish \
     fish \
+    loksh \
+    mksh \
+    nushell \
+    oksh \
+    tcsh \
+    yash \
+    zsh \
     unzip \
     github-cli \
     shadow \
@@ -60,10 +69,11 @@ RUN ARCH=$(uname -m) \
 ARG HOST_UID=1000
 ARG HOST_USER=user
 ARG HOST_HOME=/home/${HOST_USER}
+ARG CONTAINER_SHELL=/bin/bash
 RUN mkdir -p "$(dirname ${HOST_HOME})" \
     && adduser -D -u ${HOST_UID} \
     -h ${HOST_HOME} \
-    -s /usr/bin/fish \
+    -s ${CONTAINER_SHELL} \
     ${HOST_USER} \
     && echo "${HOST_USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 

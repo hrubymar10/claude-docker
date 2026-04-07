@@ -31,7 +31,7 @@ status: ## Show container status
 rebuild: ## Rebuild image from scratch and restart
 	@bin/claude-docker-ctrl rebuild
 
-shell: ## Open a fish shell inside the container
+shell: ## Open a shell inside the container (auto-detects from host $$SHELL)
 	@bin/claude-docker-ctrl shell
 
 exec: ## Start an interactive Claude session inside the container
