@@ -24,6 +24,37 @@ if [[ ! -f "$CONFIG_DIR/claude-notifier" ]]; then
   chmod +x "$CONFIG_DIR/claude-notifier"
 fi
 
+# GPU passthrough (opt-in via DOCKER_GPU=all or DOCKER_GPU=0,1 etc.)
+if [[ -n "${DOCKER_GPU:-}" ]]; then
+  GPU_OVERRIDE=$(mktemp "${TMPDIR:-/tmp}/claude-docker-gpu.XXXXXX")
+  if [[ "$DOCKER_GPU" == "all" ]]; then
+    cat > "$GPU_OVERRIDE" <<YAMLEOF
+services:
+  claude:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+YAMLEOF
+  else
+    cat > "$GPU_OVERRIDE" <<YAMLEOF
+services:
+  claude:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${DOCKER_GPU}']
+              capabilities: [gpu]
+YAMLEOF
+  fi
+  COMPOSE_FILES+=(-f "$GPU_OVERRIDE")
+fi
+
 # Mount global ~/CLAUDE.md if it exists
 if [[ -f "$HOME/CLAUDE.md" ]]; then
   CLAUDEMD_OVERRIDE=$(mktemp "${TMPDIR:-/tmp}/claude-docker-claudemd.XXXXXX")
@@ -161,6 +192,25 @@ check_claude_config_dir() {
 
 BANNER
   exit 1
+}
+
+# ── Docker API version check ────────────────────────────────────
+MIN_API_VERSION="1.44"
+check_docker_api_version() {
+  docker info >/dev/null 2>&1 \
+    || die "Docker is not running."
+  local api_version
+  api_version=$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null) || true
+  if [[ -z "$api_version" ]]; then
+    echo "Warning: could not determine Docker API version" >&2
+    return 0
+  fi
+  # Compare major.minor versions
+  local IFS='.'
+  local -a min=($MIN_API_VERSION) cur=($api_version)
+  if (( cur[0] < min[0] || (cur[0] == min[0] && cur[1] < min[1]) )); then
+    die "Docker API version $api_version is too old (minimum: $MIN_API_VERSION). Please upgrade Docker."
+  fi
 }
 
 # ── Pre-flight checks for commands that need a running container ─
@@ -398,6 +448,7 @@ ssh_relay_status() {
 # ── Commands ─────────────────────────────────────────────────────
 cmd_start() {
   check_claude_config_dir
+  check_docker_api_version
   setup_env
   echo "Building image (GO_VERSION=${GO_VERSION})..."
   docker compose "${COMPOSE_FILES[@]}" build
@@ -463,6 +514,7 @@ cmd_exec() {
 
 cmd_rebuild() {
   check_claude_config_dir
+  check_docker_api_version
   setup_env
   echo "Rebuilding image from scratch (GO_VERSION=${GO_VERSION})..."
   docker compose "${COMPOSE_FILES[@]}" build --no-cache

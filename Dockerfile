@@ -42,6 +42,10 @@ RUN apk add --no-cache \
     aws-cli \
     docker-cli-buildx
 
+# ── Extra user-specified packages (no Dockerfile edit needed) ────────
+ARG EXTRA_PACKAGES=""
+RUN if [ -n "$EXTRA_PACKAGES" ]; then apk add --no-cache $EXTRA_PACKAGES; fi
+
 # ── uv / uvx (Python package runner) ────────────────────────────────
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
@@ -78,8 +82,12 @@ RUN mkdir -p "$(dirname ${HOST_HOME})" \
     && echo "${HOST_USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # ── Claude Code (native installer) ─────────────────────────────
+ARG CC_VERSION=""
 USER ${HOST_USER}
-RUN curl -fsSL https://claude.ai/install.sh | bash
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+    && if [ -n "$CC_VERSION" ]; then \
+         "${HOME}/.local/bin/claude" update --target "$CC_VERSION"; \
+       fi
 USER root
 ENV PATH="${HOST_HOME}/.local/bin:/usr/local/custom-bin:${PATH}"
 ENV DISABLE_AUTOUPDATER=1

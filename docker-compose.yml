@@ -49,6 +49,8 @@ services:
         HOST_HOME: ${HOST_HOME}
         GO_VERSION: ${GO_VERSION}
         CONTAINER_SHELL: ${CONTAINER_SHELL:-/bin/bash}
+        EXTRA_PACKAGES: ${EXTRA_PACKAGES:-}
+        CC_VERSION: ${CC_VERSION:-}
     volumes:
       - ${CLAUDE_JSON_PATH}:/run/.claude.json.host:ro
       - ${CLAUDE_CONFIG_DIR_HOST}:${CLAUDE_CONFIG_DIR_HOST}
@@ -75,6 +77,7 @@ services:
       CONTAINER_SHELL: ${CONTAINER_SHELL:-/bin/bash}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    mem_limit: ${DOCKER_MEMORY_LIMIT:-0}
     depends_on:
       - filter-proxy
     networks:
