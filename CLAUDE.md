@@ -34,6 +34,7 @@ bin/claude-docker-ctrl rebuild  # rebuild image from scratch + restart
   - `.env.example` — all configurable env vars
   - `claude-settings.example.json` — example Claude Code hooks
   - `CLAUDE.md.example` — example CLAUDE.md with notifier usage
+- `aws-cred-proxy/` — Go HTTP server that serves read-only AWS SSO credentials to the container (optional)
 - `beeper/` — simple Go HTTP server that plays a beep sound on the host (optional)
 - `gpg-keys/` — drop GPG private keys here for commit signing (gitignored)
 
@@ -91,6 +92,30 @@ Two modes are supported (can coexist):
 - **SSH agent forwarding** — if `SSH_AUTH_SOCK` is set on the host, a socat relay forwards the SSH agent into the container. `~/.ssh/known_hosts` is mounted automatically. No keys are copied — the agent handles auth. Works with any git host (GitHub, GitLab, Bitbucket, etc.).
 
 Both can be active simultaneously (e.g., GITHUB_TOKEN for GitHub HTTPS + SSH agent for GitLab).
+
+### AWS Credentials (Read-Only)
+
+A host-side credential proxy serves read-only AWS SSO credentials to the container. Only explicitly allowlisted profiles are served — all other requests are rejected.
+
+**Setup:**
+
+1. Configure ViewOnlyAccess SSO profiles in `~/.aws/config` on the host
+2. Export the allowlist in your shell profile:
+   ```bash
+   export AWS_CRED_PROXY_PROFILES="my-readonly:us-east-1,my-test-readonly:eu-west-1"
+   ```
+3. Log in to SSO on the host: `aws sso login --profile my-readonly`
+4. Start/restart the container: `claude-docker-ctrl start`
+
+The proxy starts automatically with the container. The entrypoint generates `~/.aws/config` inside the container with `credential_process` entries that fetch credentials from the proxy via `host.docker.internal`.
+
+**Usage inside the container:**
+```bash
+aws s3 ls --profile my-readonly          # uses the first profile
+aws s3 ls --profile my-test-readonly     # uses the second profile
+```
+
+When the SSO session expires (~12h), re-run `aws sso login` on the host — the proxy picks up the new session automatically.
 
 ## GPG Commit Signing
 

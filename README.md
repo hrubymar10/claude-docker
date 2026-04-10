@@ -9,6 +9,7 @@ Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) in an isolated
 - **Path mirroring** — `~/project` inside the container = same path on the host (works with both `/Users/` and `/home/`)
 - **VSCode integration** — works with the Claude Code extension via process wrapper
 - **GPG commit signing** — import keys into the container for signed commits
+- **AWS credentials proxy** — read-only AWS SSO credentials via host-side proxy (no secrets in the container)
 - **Pluggable notifications** — customizable `claude-notifier` script for sound/alert integration
 
 ## Prerequisites
@@ -16,7 +17,7 @@ Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) in an isolated
 - macOS (Apple Silicon or Intel) or Linux (amd64/arm64)
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/), [OrbStack](https://orbstack.dev/) (macOS), or Docker Engine (Linux)
 - [Claude Max subscription](https://claude.ai/) (authenticated via `claude` CLI on host)
-- Go (for building the beep server; optional)
+- Go (for building the AWS credential proxy and beep server; optional)
 
 ## Setup
 
@@ -148,6 +149,56 @@ bin/claude-docker-ctrl rebuild  # rebuild image from scratch + restart
 
 The `gpg-keys/` directory is gitignored — keys never get committed.
 
+## AWS Credentials (Optional)
+
+Claude inside the container can use read-only AWS credentials via a host-side proxy. No AWS credentials are stored in the container — every request is forwarded to the host, which uses its active SSO session.
+
+### How it works
+
+A small Go HTTP server (`aws-cred-proxy/`) runs on the host and serves credentials for explicitly allowlisted profiles only. Inside the container, `~/.aws/config` is auto-generated with `credential_process` entries that `curl` the proxy via `host.docker.internal`.
+
+### Setup
+
+1. Configure [AWS SSO](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html) profiles in `~/.aws/config` on the host (e.g. with `ViewOnlyAccess` permission set)
+
+2. Export the allowlist in your shell profile:
+
+   ```bash
+   export AWS_CRED_PROXY_PROFILES="my-readonly:us-east-1,my-test-readonly:eu-west-1"
+   ```
+
+   Format: `profile_name:region` pairs, comma-separated. Only listed profiles are served — all other requests return 403.
+
+3. Log in to SSO on the host:
+
+   ```bash
+   aws sso login --profile my-readonly
+   ```
+
+4. Start (or restart) the container:
+
+   ```bash
+   bin/claude-docker-ctrl start
+   ```
+
+   The proxy builds and starts automatically. You can check its status with `bin/claude-docker-ctrl status`.
+
+### Usage inside the container
+
+```bash
+aws s3 ls --profile my-readonly
+aws s3 ls --profile my-test-readonly
+```
+
+When the SSO session expires (~12h), re-run `aws sso login` on the host — the proxy picks up the new session automatically, no container restart needed.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AWS_CRED_PROXY_PROFILES` | _(unset)_ | Comma-separated `name:region` pairs. Proxy only starts when set. |
+| `AWS_CRED_PROXY_PORT` | `9998` | Port for the credential proxy on the host. |
+
 ## How It Works
 
 ```
@@ -226,6 +277,7 @@ go install golang.org/x/tools/gopls@latest
 | Allowed docker commands | `scripts/docker-wrapper.sh` |
 | Socket proxy API rules | `docker-compose.yml` socket-proxy command |
 | GPG keys | `gpg-keys/*.asc` or `*.gpg` |
+| AWS credential proxy | `AWS_CRED_PROXY_PROFILES` env var (see [AWS Credentials](#aws-credentials-optional)) |
 
 ## License
 

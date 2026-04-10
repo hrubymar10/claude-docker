@@ -1,4 +1,5 @@
 beeper/beeper
+aws-cred-proxy/aws-cred-proxy
 gpg-keys/*
 !gpg-keys/.gitkeep
 config/docker-compose.local.yml
