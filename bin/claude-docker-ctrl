@@ -356,6 +356,58 @@ setup_env() {
   fi
 }
 
+# ── AWS credential proxy management ──────────────────────────────
+AWS_CRED_PROXY_PID_FILE="${HOME}/.claude-docker-aws-cred-proxy.pid"
+AWS_CRED_PROXY_PORT="${AWS_CRED_PROXY_PORT:-9998}"
+
+start_aws_cred_proxy() {
+  [[ -n "${AWS_CRED_PROXY_PROFILES:-}" ]] || return 0
+
+  if [[ -f "$AWS_CRED_PROXY_PID_FILE" ]] && kill -0 "$(cat "$AWS_CRED_PROXY_PID_FILE")" 2>/dev/null; then
+    echo "AWS credential proxy already running (PID $(cat "$AWS_CRED_PROXY_PID_FILE"))"
+    return
+  fi
+
+  if ! command -v go &>/dev/null; then
+    echo "Warning: go not found, skipping AWS credential proxy" >&2
+    return
+  fi
+
+  local proxy_bin="$PROJECT_DIR/aws-cred-proxy/aws-cred-proxy"
+  echo "Building AWS credential proxy..."
+  go build -o "$proxy_bin" "$PROJECT_DIR/aws-cred-proxy/main.go"
+
+  AWS_CRED_PROXY_PROFILES="$AWS_CRED_PROXY_PROFILES" \
+  AWS_CRED_PROXY_PORT="$AWS_CRED_PROXY_PORT" \
+    "$proxy_bin" &
+  local pid=$!
+  echo "$pid" > "$AWS_CRED_PROXY_PID_FILE"
+  echo "AWS credential proxy started (PID $pid) on http://127.0.0.1:$AWS_CRED_PROXY_PORT"
+}
+
+stop_aws_cred_proxy() {
+  if [[ -f "$AWS_CRED_PROXY_PID_FILE" ]]; then
+    local pid
+    pid=$(cat "$AWS_CRED_PROXY_PID_FILE")
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid"
+      echo "AWS credential proxy stopped (PID $pid)"
+    fi
+    rm -f "$AWS_CRED_PROXY_PID_FILE"
+  else
+    echo "No AWS credential proxy PID file found"
+  fi
+}
+
+aws_cred_proxy_status() {
+  if [[ -f "$AWS_CRED_PROXY_PID_FILE" ]] && kill -0 "$(cat "$AWS_CRED_PROXY_PID_FILE")" 2>/dev/null; then
+    echo "AWS credential proxy: running (PID $(cat "$AWS_CRED_PROXY_PID_FILE")) on port $AWS_CRED_PROXY_PORT"
+  else
+    echo "AWS credential proxy: stopped"
+    rm -f "$AWS_CRED_PROXY_PID_FILE" 2>/dev/null
+  fi
+}
+
 # ── Beeper server management ─────────────────────────────────────
 BEEPER_PID_FILE="${HOME}/.claude-docker-beeper.pid"
 
@@ -455,6 +507,7 @@ cmd_start() {
   echo "Starting container (shell: ${CONTAINER_SHELL})..."
   docker compose "${COMPOSE_FILES[@]}" up -d
   start_ssh_relay
+  start_aws_cred_proxy
   echo ""
   echo "Container '${CONTAINER_NAME}' is running."
   echo "  Interactive:  $(basename "$0") exec"
@@ -468,6 +521,7 @@ cmd_stop() {
   echo "Stopping container..."
   docker compose "${COMPOSE_FILES[@]}" down
   stop_ssh_relay
+  stop_aws_cred_proxy
 }
 
 cmd_status() {
@@ -490,6 +544,9 @@ cmd_status() {
   echo ""
   echo "=== SSH Relay ==="
   ssh_relay_status
+  echo ""
+  echo "=== AWS Credential Proxy ==="
+  aws_cred_proxy_status
 }
 
 cmd_shell() {
@@ -521,6 +578,7 @@ cmd_rebuild() {
   echo "Restarting container..."
   docker compose "${COMPOSE_FILES[@]}" up -d --force-recreate
   start_ssh_relay
+  start_aws_cred_proxy
   echo "Done."
 }
 
