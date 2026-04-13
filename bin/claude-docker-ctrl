@@ -516,7 +516,6 @@ cmd_start() {
 }
 
 cmd_stop() {
-  check_claude_config_dir
   setup_env
   echo "Stopping container..."
   docker compose "${COMPOSE_FILES[@]}" down
@@ -550,7 +549,6 @@ cmd_status() {
 }
 
 cmd_shell() {
-  check_claude_config_dir
   check_container
   local workdir="$(pwd)"
   check_mount "$workdir"
@@ -562,7 +560,6 @@ cmd_shell() {
 
 cmd_exec() {
   shift 2>/dev/null || true
-  check_claude_config_dir
   check_container
   local workdir="$(pwd)"
   check_mount "$workdir"
