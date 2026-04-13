@@ -79,6 +79,18 @@ YAMLEOF
   COMPOSE_FILES+=(-f "$SSH_OVERRIDE")
 fi
 
+# Mount ~/.agents if it exists (Claude Code skills/agents directory)
+if [[ -d "$HOME/.agents" ]]; then
+  AGENTS_OVERRIDE=$(mktemp "${TMPDIR:-/tmp}/claude-docker-agents.XXXXXX")
+  cat > "$AGENTS_OVERRIDE" <<YAMLEOF
+services:
+  claude:
+    volumes:
+      - ${HOME}/.agents:${HOST_HOME:-${HOME}}/.agents
+YAMLEOF
+  COMPOSE_FILES+=(-f "$AGENTS_OVERRIDE")
+fi
+
 # ── Exclude masking (hide sensitive files/dirs from container) ────
 # Reads x-excludes from docker-compose.local.yml, generates tmpfs/null overlays.
 apply_excludes() {
