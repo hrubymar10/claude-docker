@@ -5,11 +5,11 @@ services:
     command:
       - '-listenip=0.0.0.0'
       - '-allowfrom=claude-filter-proxy'
-      - '-allowGET=/(v1\..{1,2}/(version|info|containers(/.*)?|images(/.*)?|networks(/.*)?|volumes(/.*)?|build.*|exec/.*|events.*)|_ping)'
-      - '-allowPOST=/(v1\..{1,2}/(containers(/.*)?|images(/.*)?|networks(/.*)?|volumes(/.*)?|build.*|exec/.*)|_ping)'
-      - '-allowPUT=/v1\..{1,2}/(containers(/.*)?)'
-      - '-allowDELETE=/v1\..{1,2}/(containers(/.*)?|images(/.*)?|networks(/.*)?|volumes(/.*)?)'
-      - '-allowHEAD=/(v1\..{1,2}/(containers(/.*)?|images(/.*)?)|_ping)'
+      - '-allowGET=/(v1\..{1,2}/)?(version|info|containers(/.*)?|images(/.*)?|networks(/.*)?|volumes(/.*)?|build.*|exec/.*|events.*|_ping)'
+      - '-allowPOST=/(v1\..{1,2}/)?(containers(/.*)?|images(/.*)?|networks(/.*)?|volumes(/.*)?|build.*|exec/.*|_ping)'
+      - '-allowPUT=/(v1\..{1,2}/)?(containers(/.*)?)'
+      - '-allowDELETE=/(v1\..{1,2}/)?(containers(/.*)?|images(/.*)?|networks(/.*)?|volumes(/.*)?)'
+      - '-allowHEAD=/(v1\..{1,2}/)?(containers(/.*)?|images(/.*)?|_ping)'
       - '-allowbindmountfrom=${ALLOWED_BIND_MOUNTS}'
       - '-loglevel=INFO'
     user: "0"
@@ -31,6 +31,8 @@ services:
       DOCKER_FILTER_LISTEN: 0.0.0.0:2375
     depends_on:
       - socket-proxy
+    ports:
+      - "127.0.0.1:${DOCKER_FILTER_PROXY_PORT:-12375}:2375"
     networks:
       - claude-internal-net
       - claude-net
@@ -60,7 +62,7 @@ services:
       - ./config/custom-bin:/usr/local/custom-bin:ro
     working_dir: ${HOST_HOME}
     environment:
-      DOCKER_HOST: tcp://claude-filter-proxy:2375
+      DOCKER_HOST: tcp://host.docker.internal:${DOCKER_FILTER_PROXY_PORT:-12375}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GIT_USER_NAME: ${GIT_USER_NAME:-}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
