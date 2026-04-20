@@ -31,8 +31,6 @@ services:
       DOCKER_FILTER_LISTEN: 0.0.0.0:2375
     depends_on:
       - socket-proxy
-    ports:
-      - "127.0.0.1:${DOCKER_FILTER_PROXY_PORT:-12375}:2375"
     networks:
       - claude-internal-net
       - claude-net
@@ -62,7 +60,7 @@ services:
       - ./config/custom-bin:/usr/local/custom-bin:ro
     working_dir: ${HOST_HOME}
     environment:
-      DOCKER_HOST: tcp://host.docker.internal:${DOCKER_FILTER_PROXY_PORT:-12375}
+      DOCKER_HOST: tcp://claude-filter-proxy:2375
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GIT_USER_NAME: ${GIT_USER_NAME:-}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
