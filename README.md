@@ -24,7 +24,7 @@ Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) in an isolated
 ### 1. Clone and enter the repo
 
 ```bash
-git clone https://github.com/youruser/claude-docker.git
+git clone https://github.com/hrubymar10/claude-docker.git
 cd claude-docker
 ```
 
