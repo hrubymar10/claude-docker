@@ -60,6 +60,7 @@ services:
       - ./gpg-keys:/run/gpg-keys:ro
       - ./config/claude-notifier:/usr/local/bin/claude-notifier:ro
       - ./config/custom-bin:/usr/local/custom-bin:ro
+      - ${HOST_HOME}/.config/caveman:${HOST_HOME}/.config/caveman:ro
     working_dir: ${HOST_HOME}
     environment:
       DOCKER_HOST: tcp://host.docker.internal:${DOCKER_FILTER_PROXY_PORT:-12375}
