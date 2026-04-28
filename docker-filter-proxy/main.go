@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,7 +11,10 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
+	"sync"
+	"time"
 )
 
 type Mount struct {
@@ -160,40 +164,236 @@ func stripDockerSocketMounts(body []byte) ([]byte, bool) {
 	return body, false
 }
 
+// ──────────────────────────────────────────────────────────────────
+// Path classification
+// ──────────────────────────────────────────────────────────────────
+
+var (
+	execCreatePathRE = regexp.MustCompile(`^(?:/v\d+(?:\.\d+)?)?/containers/([^/]+)/exec$`)
+	execStartPathRE  = regexp.MustCompile(`^(?:/v\d+(?:\.\d+)?)?/exec/([^/]+)/start$`)
+	hexRE            = regexp.MustCompile(`^[0-9a-fA-F]+$`)
+)
+
+func pathOnly(p string) string {
+	if i := strings.IndexByte(p, '?'); i >= 0 {
+		return p[:i]
+	}
+	return p
+}
+
 func isContainerCreate(path string) bool {
-	p := strings.SplitN(path, "?", 2)[0]
-	return strings.HasSuffix(p, "/containers/create")
+	return strings.HasSuffix(pathOnly(path), "/containers/create")
 }
 
 func isNetworkMutation(path string) bool {
-	p := strings.SplitN(path, "?", 2)[0]
+	p := pathOnly(path)
 	return strings.HasSuffix(p, "/connect") || strings.HasSuffix(p, "/disconnect")
 }
 
-func main() {
-	upstream := os.Getenv("DOCKER_FILTER_UPSTREAM")
-	if upstream == "" {
-		log.Fatal("DOCKER_FILTER_UPSTREAM not set")
-	}
-	listen := os.Getenv("DOCKER_FILTER_LISTEN")
-	if listen == "" {
-		listen = "0.0.0.0:2375"
-	}
+func isExecCreate(path string) bool {
+	return execCreatePathRE.MatchString(pathOnly(path))
+}
 
-	target, err := url.Parse(upstream)
+func isExecStart(path string) bool {
+	return execStartPathRE.MatchString(pathOnly(path))
+}
+
+func extractContainerIDFromExecPath(path string) string {
+	m := execCreatePathRE.FindStringSubmatch(pathOnly(path))
+	if len(m) < 2 {
+		return ""
+	}
+	return m[1]
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Exec body inspection
+// ──────────────────────────────────────────────────────────────────
+
+type execConfig struct {
+	User       string `json:"User"`
+	Privileged bool   `json:"Privileged"`
+}
+
+// checkExecConfig parses a Docker exec-create (or exec-start) request body and
+// returns a non-empty reason string when the request must be blocked.
+func checkExecConfig(body []byte) string {
+	if len(bytes.TrimSpace(body)) == 0 {
+		return ""
+	}
+	var cfg execConfig
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		// Unparseable body — let upstream decide on shape, but don't allow
+		// privileged escalation by accident.
+		return ""
+	}
+	if cfg.Privileged {
+		return "privileged exec is not allowed"
+	}
+	if isRootUser(cfg.User) {
+		return "exec as root is not allowed"
+	}
+	return ""
+}
+
+func isRootUser(user string) bool {
+	u := strings.TrimSpace(user)
+	if u == "" {
+		return false
+	}
+	// User can be "uid", "uid:gid", "name", or "name:group". The uid/name
+	// portion is everything before the first colon.
+	if i := strings.IndexByte(u, ':'); i >= 0 {
+		u = u[:i]
+	}
+	u = strings.TrimSpace(u)
+	return u == "0" || strings.EqualFold(u, "root")
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Container allowlist
+// ──────────────────────────────────────────────────────────────────
+
+// matchesAllowedContainer reports whether the {id} from a Docker URL refers to
+// the Claude container. A name match is always accepted; an ID prefix match is
+// accepted only when the full container ID has been resolved.
+func matchesAllowedContainer(id, allowedName, allowedFullID string) bool {
+	if id == "" {
+		return false
+	}
+	if allowedName != "" && id == allowedName {
+		return true
+	}
+	if allowedFullID == "" {
+		return false
+	}
+	if !hexRE.MatchString(id) {
+		return false
+	}
+	if len(id) > len(allowedFullID) {
+		return false
+	}
+	return strings.EqualFold(allowedFullID[:len(id)], id)
+}
+
+// ──────────────────────────────────────────────────────────────────
+// HTTP handler
+// ──────────────────────────────────────────────────────────────────
+
+type proxyConfig struct {
+	target        *url.URL
+	containerName string
+
+	mu          sync.RWMutex
+	containerID string
+}
+
+func (c *proxyConfig) allowedID() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.containerID
+}
+
+func (c *proxyConfig) setID(id string) {
+	c.mu.Lock()
+	c.containerID = id
+	c.mu.Unlock()
+}
+
+// resolveContainerID asks the upstream for the configured container's full ID
+// and caches it. Best-effort: failures are logged and retried on the next
+// request.
+func (c *proxyConfig) resolveContainerID() {
+	if c.containerName == "" {
+		return
+	}
+	if c.allowedID() != "" {
+		return
+	}
+	endpoint := *c.target
+	endpoint.Path = "/containers/" + c.containerName + "/json"
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
-		log.Fatalf("invalid upstream URL: %v", err)
+		return
 	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("could not resolve container %q: %v", c.containerName, err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+	var info struct {
+		ID string `json:"Id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return
+	}
+	if info.ID != "" {
+		log.Printf("resolved %q to container ID %s", c.containerName, info.ID)
+		c.setID(info.ID)
+	}
+}
 
+func newProxyHandler(cfg *proxyConfig) http.Handler {
+	state := cfg
+	proxy := httputil.NewSingleHostReverseProxy(state.target)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" && isNetworkMutation(r.URL.Path) {
+		if r.Method == http.MethodPost && isNetworkMutation(r.URL.Path) {
 			log.Printf("BLOCKED network connect/disconnect: %s", r.URL.Path)
 			http.Error(w, "Forbidden: network connect/disconnect is not allowed", http.StatusForbidden)
 			return
 		}
-		if r.Method == "POST" && isContainerCreate(r.URL.Path) {
+
+		if r.Method == http.MethodPost && isExecCreate(r.URL.Path) {
+			id := extractContainerIDFromExecPath(r.URL.Path)
+			if !matchesAllowedContainer(id, state.containerName, state.allowedID()) {
+				// Try resolving lazily, then re-check (handles the cold-start
+				// case where Claude's container starts after the proxy).
+				state.resolveContainerID()
+				if !matchesAllowedContainer(id, state.containerName, state.allowedID()) {
+					log.Printf("BLOCKED exec create on disallowed container: %s", id)
+					http.Error(w, "Forbidden: exec is restricted to the Claude container", http.StatusForbidden)
+					return
+				}
+			}
+			body, err := io.ReadAll(r.Body)
+			r.Body.Close()
+			if err != nil {
+				http.Error(w, "failed to read body", http.StatusInternalServerError)
+				return
+			}
+			if reason := checkExecConfig(body); reason != "" {
+				log.Printf("BLOCKED exec create: %s", reason)
+				http.Error(w, fmt.Sprintf("Forbidden: %s", reason), http.StatusForbidden)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			r.ContentLength = int64(len(body))
+		}
+
+		if r.Method == http.MethodPost && isExecStart(r.URL.Path) {
+			body, err := io.ReadAll(r.Body)
+			r.Body.Close()
+			if err != nil {
+				http.Error(w, "failed to read body", http.StatusInternalServerError)
+				return
+			}
+			if reason := checkExecConfig(body); reason != "" {
+				log.Printf("BLOCKED exec start: %s", reason)
+				http.Error(w, fmt.Sprintf("Forbidden: %s", reason), http.StatusForbidden)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			r.ContentLength = int64(len(body))
+		}
+
+		if r.Method == http.MethodPost && isContainerCreate(r.URL.Path) {
 			body, err := io.ReadAll(r.Body)
 			r.Body.Close()
 			if err != nil {
@@ -217,11 +417,36 @@ func main() {
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			r.ContentLength = int64(len(body))
 		}
+
 		proxy.ServeHTTP(w, r)
 	})
+	return mux
+}
 
-	log.Printf("docker-filter-proxy listening on %s, upstream %s", listen, upstream)
-	if err := http.ListenAndServe(listen, mux); err != nil {
+func main() {
+	upstream := os.Getenv("DOCKER_FILTER_UPSTREAM")
+	if upstream == "" {
+		log.Fatal("DOCKER_FILTER_UPSTREAM not set")
+	}
+	listen := os.Getenv("DOCKER_FILTER_LISTEN")
+	if listen == "" {
+		listen = "0.0.0.0:2375"
+	}
+	containerName := os.Getenv("CLAUDE_CONTAINER_NAME")
+	if containerName == "" {
+		log.Print("warning: CLAUDE_CONTAINER_NAME not set — exec requests will be blocked")
+	}
+
+	target, err := url.Parse(upstream)
+	if err != nil {
+		log.Fatalf("invalid upstream URL: %v", err)
+	}
+
+	cfg := &proxyConfig{target: target, containerName: containerName}
+	handler := newProxyHandler(cfg)
+
+	log.Printf("docker-filter-proxy listening on %s, upstream %s, container %q", listen, upstream, containerName)
+	if err := http.ListenAndServe(listen, handler); err != nil {
 		log.Fatal(err)
 	}
 }

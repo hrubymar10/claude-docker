@@ -23,7 +23,7 @@ bin/claude-docker-ctrl rebuild  # rebuild image from scratch + restart
   - `docker-wrapper.sh` — allowlists safe docker subcommands, blocks `run`/`build`/`cp`
   - `claude-session.sh` — process-group wrapper that ensures claude + children (gopls) are killed on disconnect
   - `go-install.sh` — Dockerfile helper to download Go by version
-- `docker-filter-proxy/` — Go reverse proxy that blocks privileged containers, host namespacing, dangerous capabilities
+- `docker-filter-proxy/` — Go reverse proxy that blocks privileged containers, host namespacing, dangerous capabilities, and exec into other containers
 - `bin/claude-docker` — interactive Claude session in container (`-it`)
 - `bin/claude-docker-vscode-wrapper` — VSCode `claudeProcessWrapper` script (`-i` only, no TTY)
 - `bin/claude-docker-jetbrains-wrapper` — JetBrains (GoLand/IntelliJ) Claude command wrapper (auto-detects TTY)
@@ -141,7 +141,7 @@ Instead of mounting the host Docker socket directly (which allows full host acce
 - Only whitelisted API endpoints are forwarded (regex-based URL matching per HTTP method)
 - Bind mounts are restricted to allowed directories via `-allowbindmountfrom` (prevents container escape)
 - The allowlist is auto-derived from actual volume mounts in both compose files
-- A `docker-filter-proxy` (Go reverse proxy) sits between Claude and the socket proxy, inspecting container-create request bodies to block privileged containers, host namespacing (PID/network/user/IPC), dangerous capabilities (SYS_ADMIN, SYS_PTRACE, etc.), device mappings, and network mutations
+- A `docker-filter-proxy` (Go reverse proxy) sits between Claude and the socket proxy, inspecting container-create request bodies to block privileged containers, host namespacing (PID/network/user/IPC), dangerous capabilities (SYS_ADMIN, SYS_PTRACE, etc.), device mappings, and network mutations. It also restricts `POST /containers/{id}/exec` to the Claude container itself (via `CLAUDE_CONTAINER_NAME`) and rejects exec configs with `Privileged: true` or `User: 0/root`
 - The `docker-wrapper.sh` CLI filter remains as defense-in-depth
 - To adjust allowed endpoints, edit the `socket-proxy` command in `docker-compose.yml`
 

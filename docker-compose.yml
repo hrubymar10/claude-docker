@@ -29,6 +29,9 @@ services:
     environment:
       DOCKER_FILTER_UPSTREAM: http://claude-socket-proxy:2375
       DOCKER_FILTER_LISTEN: 0.0.0.0:2375
+      # Restricts /containers/{id}/exec to Claude's own container — without
+      # this, Claude could docker exec into any container on the host daemon.
+      CLAUDE_CONTAINER_NAME: claude-docker
     depends_on:
       - socket-proxy
     networks:

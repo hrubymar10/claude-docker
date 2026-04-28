@@ -93,6 +93,7 @@ The socket-proxy allows POST to `/containers/.*`, `/images/.*`, `/volumes/.*`, `
 
 - `docker-wrapper.sh` restricts CLI commands to a safe whitelist
 - `docker-filter-proxy` blocks dangerous container-create configurations
+- `docker-filter-proxy` restricts `POST /containers/{id}/exec` to Claude's own container and rejects exec configs with `Privileged: true` or `User: 0/root`
 - Socket-proxy restricts bind mounts to allowed directories
 - Exploiting the broad API surface requires raw HTTP calls, not CLI
 
