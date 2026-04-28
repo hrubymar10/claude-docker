@@ -44,9 +44,11 @@ exec: ## Start an interactive Claude session inside the container
 test: ## Run host-side integration tests
 	@echo "Running tests (branch: $(GIT_BRANCH), $(GIT_SHA))..."
 	@bash test/test-claude-docker.sh
+	@bash test/test-git-wrapper.sh
 
 test-verbose: ## Run tests with bash -x tracing
 	@bash -x test/test-claude-docker.sh
+	@bash -x test/test-git-wrapper.sh
 
 ##@ Docker image
 
