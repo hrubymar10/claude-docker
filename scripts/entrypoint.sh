@@ -4,6 +4,17 @@ set -euo pipefail
 HOST_USER="${HOST_USER:-user}"
 HOST_HOME="${HOST_HOME:-/home/$HOST_USER}"
 
+# git-real is mode 0700 root:root, so the prior `gosu $HOST_USER` invocations
+# can no longer exec it. entrypoint.sh runs as root, so call git-real directly
+# with HOME pointed at the host user's home; ownership is fixed up once after
+# all config writes via fixup_gitconfig_owner below.
+git_config_global() {
+  HOME="$HOST_HOME" /usr/libexec/git-real/git config --global "$@"
+}
+fixup_gitconfig_owner() {
+  chown "$HOST_USER:$HOST_USER" "$HOST_HOME/.gitconfig" 2>/dev/null || true
+}
+
 # ── Seed .claude.json from read-only host mount ─────────────────
 # The host file is bind-mounted read-only at /run/.claude.json.host.
 # We copy it once at container start to a writable location inside
@@ -52,9 +63,9 @@ if [[ -n "${GITHUB_TOKEN:-}" ]]; then
   printf '#!/bin/sh\nprintf "username=oauth2\\npassword=%%s\\n" "$GITHUB_TOKEN"\n' > "$CRED_HELPER"
   chmod 700 "$CRED_HELPER"
   chown "$HOST_USER:$HOST_USER" "$CRED_HELPER"
-  gosu "$HOST_USER" /usr/libexec/git-real/git config --global \
+  git_config_global \
     credential."https://github.com".helper "$CRED_HELPER"
-  gosu "$HOST_USER" /usr/libexec/git-real/git config --global \
+  git_config_global \
     url."https://github.com/".insteadOf "git@github.com:"
 fi
 
@@ -69,16 +80,17 @@ if [[ -n "${GIT_AUTH_USER:-}" && -n "${GIT_AUTH_TOKEN:-}" ]]; then
     "$(printf '%q' "$GIT_AUTH_USER")" "$(printf '%q' "$GIT_AUTH_TOKEN")" > "$CRED_HELPER"
   chmod 700 "$CRED_HELPER"
   chown "$HOST_USER:$HOST_USER" "$CRED_HELPER"
-  gosu "$HOST_USER" /usr/libexec/git-real/git config --global credential.helper "$CRED_HELPER"
+  git_config_global credential.helper "$CRED_HELPER"
 fi
 
 # ── Git identity ─────────────────────────────────────────────────
 if [[ -n "${GIT_USER_NAME:-}" ]]; then
-  gosu "$HOST_USER" /usr/libexec/git-real/git config --global user.name "$GIT_USER_NAME"
+  git_config_global user.name "$GIT_USER_NAME"
 fi
 if [[ -n "${GIT_USER_EMAIL:-}" ]]; then
-  gosu "$HOST_USER" /usr/libexec/git-real/git config --global user.email "$GIT_USER_EMAIL"
+  git_config_global user.email "$GIT_USER_EMAIL"
 fi
+fixup_gitconfig_owner
 
 # ── Docker registry auth (ghcr.io) ──────────────────────────────
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then

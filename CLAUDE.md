@@ -147,9 +147,11 @@ Instead of mounting the host Docker socket directly (which allows full host acce
 
 ### Git Push Protection
 
-The real `/usr/bin/git` is renamed to `/usr/libexec/git-real/git` at build time. The wrapper replaces it at `/usr/bin/git`, so there is no bypass path (e.g., calling `/usr/bin/git push` still hits the wrapper). Push is allowed to all branches except those listed in `GIT_PROTECTED_BRANCHES` (default: `main master`).
+The real `/usr/bin/git` is renamed to `/usr/libexec/git-real/git` and locked down to mode `0700 root:root` at build time. The wrapper at `/usr/bin/git` escalates via `sudo` to invoke it, so the unprivileged user cannot bypass the wrapper by calling the real binary directly. Push is blocked to branches listed in `GIT_PROTECTED_BRANCHES` (default: `main master`).
 
-See `SECURITY_ISSUES.md` for known escape vectors.
+This is **defense-in-depth, not a security boundary.** Because the container user has `NOPASSWD: ALL` sudo, a determined caller can still run `sudo /usr/libexec/git-real/git push ...` directly and bypass the protected-branch check. Treat the wrapper as a usability hint; enforce real branch protection server-side (e.g., a pre-receive hook on the upstream).
+
+See `SECURITY_ISSUES.md` for the threat model and remaining gaps.
 
 ## Design Decisions
 

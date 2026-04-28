@@ -33,6 +33,19 @@ The git wrapper blocks push only to protected branches (default: `main`, `master
 
 **Rationale:** This is intentional — Claude needs to push feature branches for PR workflows. Force push on feature branches is standard practice (e.g., after rebase).
 
+## 2a. Git wrapper bypass via NOPASSWD sudo
+
+**Status:** Accepted trade-off (paired with #3)
+**Severity:** Low (the wrapper is a usability hint, not a security boundary)
+
+The real git binary at `/usr/libexec/git-real/git` is mode `0700 root:root`, and the wrapper at `/usr/bin/git` escalates via `sudo` to invoke it. This blocks the trivial bypass (`/usr/libexec/git-real/git push -f origin main`).
+
+However, because the container user has `NOPASSWD: ALL` sudo (#3), a caller can still run `sudo /usr/libexec/git-real/git push ...` or `sudo apk add --force-overwrite git` to bypass the protected-branch check.
+
+**Impact:** Force push to protected branches is possible from inside the container with whatever credentials are configured.
+
+**Real fix:** Enforce branch protection server-side (a pre-receive hook on the upstream that rejects pushes to protected branches from this token). The in-container wrapper is best-effort.
+
 ## 3. Passwordless sudo inside container
 
 **Status:** By design
@@ -107,9 +120,10 @@ Claude process
 ```
 
 ```text
-Claude process
-  └─ git-wrapper.sh       Blocks push to protected branches
-      └─ /usr/libexec/git-real/git
+Claude process (unprivileged user)
+  └─ git-wrapper.sh           Blocks push to protected branches
+      └─ sudo                 Escalates to root (git-real is 0700 root:root)
+          └─ /usr/libexec/git-real/git
 ```
 
-Each layer provides defense-in-depth. Bypassing the CLI wrapper still hits the filter proxy; bypassing the filter proxy still hits the socket proxy's bind mount restrictions.
+Each layer provides defense-in-depth. Bypassing the CLI wrapper still hits the filter proxy; bypassing the filter proxy still hits the socket proxy's bind mount restrictions. The git wrapper is **best-effort only** — see #2a — because `NOPASSWD: ALL` sudo (#3) lets the caller invoke `git-real` directly. Real branch protection must be enforced server-side.

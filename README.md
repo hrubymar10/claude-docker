@@ -232,7 +232,7 @@ The container cannot access the host Docker socket directly. All Docker API call
 - Restricts bind mounts to directories actually mounted in the container
 - Auto-derives the allowlist from your compose volume configuration
 
-Additionally, the `git` binary is replaced with a wrapper that blocks pushes to protected branches (`main`, `master` by default), and a `docker` wrapper blocks dangerous subcommands (`run`, `build`, `cp`).
+Additionally, the `git` binary is replaced with a wrapper that blocks pushes to protected branches (`main`, `master` by default). The real `git` is locked down to `root` (mode `0700`) and the wrapper escalates via `sudo`, so direct invocation is denied to the unprivileged user. This is defense-in-depth — `NOPASSWD` sudo means a determined caller can still bypass it, so enforce real branch protection server-side. A `docker` wrapper blocks dangerous subcommands (`run`, `build`, `cp`).
 
 See [SECURITY_ISSUES.md](SECURITY_ISSUES.md) for known limitations.
 

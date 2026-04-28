@@ -99,7 +99,11 @@ RUN npm install -g typescript typescript-language-server pyright
 RUN touch /this-is-claude-docker-env
 
 # ── Security wrappers (replace real binaries) ─────────────────────
-RUN mkdir -p /usr/libexec/git-real && mv /usr/bin/git /usr/libexec/git-real/git
+# git-real is mode 0700 root:root so the unprivileged user cannot bypass
+# the wrapper by exec'ing the real binary directly. See SECURITY_ISSUES.md.
+RUN mkdir -p /usr/libexec/git-real \
+ && mv /usr/bin/git /usr/libexec/git-real/git \
+ && chmod 0700 /usr/libexec/git-real/git
 COPY scripts/git-wrapper.sh    /usr/bin/git
 COPY scripts/docker-wrapper.sh /usr/local/bin/docker
 COPY scripts/claude-session.sh /usr/local/bin/claude-session
