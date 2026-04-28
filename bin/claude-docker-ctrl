@@ -441,7 +441,7 @@ start_beeper() {
   "$beeper_bin" &
   local pid=$!
   echo "$pid" > "$BEEPER_PID_FILE"
-  echo "Beeper started (PID $pid) on http://127.0.0.1:9999"
+  echo "Beeper started (PID $pid) on http://${BEEPER_BIND:-127.0.0.1:9999} (allow: ${BEEPER_ALLOW:-127.0.0.0/8})"
 }
 
 stop_beeper() {

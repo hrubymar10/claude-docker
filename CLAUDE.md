@@ -132,6 +132,22 @@ The `gpg-keys/` directory is gitignored — only `.gitkeep` is committed.
 
 **Note:** Keys must have no passphrase since the container has no TTY for pinentry. If your key has a passphrase, strip it on a temporary keyring before exporting.
 
+## Beeper
+
+Optional host-side HTTP server (`beeper/main.go`) that plays a sound when called. Started by `claude-docker-ctrl beeper-start`. Two env vars control access:
+
+- `BEEPER_BIND` — `host:port` to listen on. Default `127.0.0.1:9999`. Host must be an IP literal (no hostnames). Set to `0.0.0.0:9999` to expose on all interfaces.
+- `BEEPER_ALLOW` — comma-separated list of source IPs / CIDRs that may call the beeper. Default `127.0.0.0/8`. Bare IPs are normalised to `/32` (v4) / `/128` (v6). Requests from anywhere else get a `403`.
+
+For container access via `host.docker.internal`, the defaults are sufficient on Docker Desktop (it forwards to host loopback). For VPN clients or other remote access, widen `BEEPER_BIND` and add the source range to `BEEPER_ALLOW`:
+
+```bash
+export BEEPER_BIND=0.0.0.0:9999
+export BEEPER_ALLOW=127.0.0.0/8,172.28.47.0/24
+```
+
+`X-Forwarded-For` is intentionally not honoured — this is a direct-connection service.
+
 ## Security: Docker Socket Proxy
 
 Instead of mounting the host Docker socket directly (which allows full host access via raw API calls), a [wollomatic/socket-proxy](https://github.com/wollomatic/socket-proxy) filters Docker API requests:
