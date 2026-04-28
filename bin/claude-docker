@@ -35,7 +35,14 @@ source "$SCRIPT_DIR/lib/session-cleanup.sh"
 SESSION_ID="$$-$RANDOM-$(date +%s)"
 start_session_watchdog "$CONTAINER" "$SESSION_ID" "$$"
 
-docker exec -it \
+# Allocate a TTY only when stdin is an interactive terminal.
+# Piped callers (e.g. aimebu agent, IDE wrappers) run without a TTY;
+# forcing -t in that context breaks --output-format stream-json/json.
+TTY_FLAG=""
+[ -t 0 ] && TTY_FLAG="-t"
+
+# shellcheck disable=SC2086
+docker exec -i $TTY_FLAG \
   -e "CLAUDE_SESSION_ID=$SESSION_ID" \
   -u "$DOCKER_USER" -w "$WORKDIR" "$CONTAINER" \
   claude-session --dangerously-skip-permissions "$@"
