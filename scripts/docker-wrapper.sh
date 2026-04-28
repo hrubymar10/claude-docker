@@ -6,12 +6,12 @@ ALLOWED="ps logs inspect stats top compose start stop restart kill pause unpause
 cmd="${1:-}"
 
 if [[ "$cmd" == "--version" || "$cmd" == "--help" ]]; then
-  exec /usr/bin/docker "$@"
+  exec /usr/libexec/docker-real/docker "$@"
 fi
 
 for allowed in $ALLOWED; do
   if [[ "$cmd" == "$allowed" ]]; then
-    exec /usr/bin/docker "$@"
+    exec /usr/libexec/docker-real/docker "$@"
   fi
 done
 

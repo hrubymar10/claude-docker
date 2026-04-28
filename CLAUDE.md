@@ -20,7 +20,7 @@ bin/claude-docker-ctrl rebuild  # rebuild image from scratch + restart
 - `scripts/` — shell scripts copied into the container at build time:
   - `entrypoint.sh` — runtime setup: socket proxy wait, git credentials, GPG import, user drop
   - `git-wrapper.sh` — blocks `git push` to protected branches. Replaces `/usr/bin/git` to prevent bypass.
-  - `docker-wrapper.sh` — allowlists safe docker subcommands, blocks `run`/`build`/`cp`
+  - `docker-wrapper.sh` — allowlists safe docker subcommands, blocks `run`/`build`/`cp`. Replaces `/usr/bin/docker`; the real binary is moved to `/usr/libexec/docker-real/docker` so the wrapper cannot be bypassed by absolute path.
   - `claude-session.sh` — process-group wrapper that ensures claude + children (gopls) are killed on disconnect
   - `go-install.sh` — Dockerfile helper to download Go by version
 - `docker-filter-proxy/` — Go reverse proxy that blocks privileged containers, host namespacing, dangerous capabilities
@@ -164,6 +164,8 @@ Instead of mounting the host Docker socket directly (which allows full host acce
 ### Git Push Protection
 
 The real `/usr/bin/git` is renamed to `/usr/libexec/git-real/git` at build time. The wrapper replaces it at `/usr/bin/git`, so there is no bypass path (e.g., calling `/usr/bin/git push` still hits the wrapper). Push is allowed to all branches except those listed in `GIT_PROTECTED_BRANCHES` (default: `main master`).
+
+The same pattern applies to docker: the real `/usr/bin/docker` is renamed to `/usr/libexec/docker-real/docker` and replaced by `docker-wrapper.sh`, so calling `/usr/bin/docker run …` directly hits the allowlist instead of the unfiltered binary.
 
 See `SECURITY_ISSUES.md` for known escape vectors.
 

@@ -6,7 +6,7 @@ This document lists known security limitations, intentional trade-offs, and pote
 
 **Status:** Open — no upstream fix available
 **Severity:** Medium
-**Requires:** Direct HTTP API calls via curl (not exploitable via `docker` CLI wrapper)
+**Requires:** Direct HTTP API calls via curl (not exploitable via `docker` CLI wrapper, which now also covers absolute-path invocations of `/usr/bin/docker` — see Vuln 2 fix below)
 
 The socket-proxy's `allowbindmountfrom` restriction only checks `HostConfig.Binds` and `HostConfig.Mounts` with `Type: "bind"`. It does NOT inspect volume driver options. An attacker can:
 
@@ -17,9 +17,8 @@ The socket-proxy's `allowbindmountfrom` restriction only checks `HostConfig.Bind
 **Impact:** Read/write access to arbitrary host paths via the Docker API.
 
 **Mitigations in place:**
-
-**Mitigations in place:**
-- `docker-wrapper.sh` blocks `docker run`, `docker volume`, `docker build`, `docker cp` at the CLI level
+- `docker-wrapper.sh` blocks `docker run`, `docker build`, `docker cp` at the CLI level. (`docker volume` is still allowlisted; this is the residual gap exploited above.)
+- The real docker binary is at `/usr/libexec/docker-real/docker` and `/usr/bin/docker` is the wrapper, so the allowlist cannot be bypassed by invoking the binary at an absolute path.
 - Exploiting this requires crafting raw HTTP requests to `tcp://claude-filter-proxy:2375`
 
 ## 2. Git push to feature branches and force push

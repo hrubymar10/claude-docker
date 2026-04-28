@@ -76,6 +76,84 @@ else
 fi
 
 echo ""
+echo "═══ Docker wrapper bypass check (Vuln 2) ═══"
+# Closes the bypass where /usr/bin/docker remained the real binary while the
+# wrapper sat at /usr/local/bin/docker. Mirrors the existing git-wrapper pattern.
+
+if grep -qE 'mv /usr/bin/docker[[:space:]]+/usr/libexec/docker-real/docker' Dockerfile; then
+  ok "Dockerfile relocates real /usr/bin/docker to /usr/libexec/docker-real/docker"
+else
+  fail "Dockerfile does not relocate /usr/bin/docker — wrapper bypass via direct /usr/bin/docker call"
+fi
+
+if grep -qE 'COPY scripts/docker-wrapper\.sh[[:space:]]+/usr/bin/docker' Dockerfile; then
+  ok "Dockerfile installs docker wrapper at /usr/bin/docker"
+else
+  fail "Dockerfile does not install wrapper at /usr/bin/docker — PATH-shadow only"
+fi
+
+if grep -qE 'exec[[:space:]]+/usr/libexec/docker-real/docker' scripts/docker-wrapper.sh; then
+  ok "wrapper invokes real docker at /usr/libexec/docker-real/docker"
+else
+  fail "wrapper does not invoke /usr/libexec/docker-real/docker"
+fi
+
+if grep -qE 'exec[[:space:]]+/usr/bin/docker' scripts/docker-wrapper.sh; then
+  fail "wrapper still invokes /usr/bin/docker — would recurse into itself"
+else
+  ok "wrapper no longer invokes /usr/bin/docker"
+fi
+
+echo ""
+echo "═══ Docker wrapper behavioral check ═══"
+# Run the wrapper with the real-docker path rewritten to a mock so we can
+# observe what gets exec'd without needing a built container.
+WRAP_TMP=$(mktemp -d)
+trap 'rm -rf "$WRAP_TMP"' EXIT
+cat > "$WRAP_TMP/mock-docker" <<'MOCK'
+#!/bin/bash
+echo "REAL_DOCKER:$*"
+MOCK
+chmod +x "$WRAP_TMP/mock-docker"
+sed "s|/usr/libexec/docker-real/docker|$WRAP_TMP/mock-docker|g" scripts/docker-wrapper.sh > "$WRAP_TMP/wrapper.sh"
+chmod +x "$WRAP_TMP/wrapper.sh"
+
+output=$(bash "$WRAP_TMP/wrapper.sh" ps 2>&1 || true)
+if [[ "$output" == "REAL_DOCKER:ps" ]]; then
+  ok "wrapper passes 'ps' through to real docker"
+else
+  fail "wrapper 'ps' got: $output"
+fi
+
+output=$(bash "$WRAP_TMP/wrapper.sh" run alpine 2>&1 || true)
+if [[ "$output" == *"blocked"* ]]; then
+  ok "wrapper blocks 'run'"
+else
+  fail "wrapper 'run' got: $output"
+fi
+
+output=$(bash "$WRAP_TMP/wrapper.sh" build . 2>&1 || true)
+if [[ "$output" == *"blocked"* ]]; then
+  ok "wrapper blocks 'build'"
+else
+  fail "wrapper 'build' got: $output"
+fi
+
+output=$(bash "$WRAP_TMP/wrapper.sh" cp foo bar 2>&1 || true)
+if [[ "$output" == *"blocked"* ]]; then
+  ok "wrapper blocks 'cp'"
+else
+  fail "wrapper 'cp' got: $output"
+fi
+
+output=$(bash "$WRAP_TMP/wrapper.sh" --version 2>&1 || true)
+if [[ "$output" == "REAL_DOCKER:--version" ]]; then
+  ok "wrapper passes '--version' to real docker"
+else
+  fail "wrapper '--version' got: $output"
+fi
+
+echo ""
 echo "═══════════════════════════════"
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && echo "ALL TESTS PASSED" || { echo "SOME TESTS FAILED"; exit 1; }
