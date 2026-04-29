@@ -6,12 +6,18 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"strings"
 )
+
+// maxCreateBodyBytes caps the body size for /containers/create. Legitimate
+// requests are well under this; the cap prevents an attacker from streaming
+// a body so large that we either OOM or skip parsing.
+const maxCreateBodyBytes = 1 << 20 // 1 MiB
 
 type Mount struct {
 	Type   string `json:"Type"`
@@ -170,6 +176,67 @@ func isNetworkMutation(path string) bool {
 	return strings.HasSuffix(p, "/connect") || strings.HasSuffix(p, "/disconnect")
 }
 
+func newProxyHandler(target *url.URL) http.Handler {
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && isNetworkMutation(r.URL.Path) {
+			log.Printf("BLOCKED network connect/disconnect: %s", r.URL.Path)
+			http.Error(w, "Forbidden: network connect/disconnect is not allowed", http.StatusForbidden)
+			return
+		}
+		if r.Method == "POST" && isContainerCreate(r.URL.Path) {
+			// Require an inspectable body: identity-encoded application/json,
+			// bounded in size. Any deviation fails closed — otherwise an
+			// alternative encoding or oversized body could skip the
+			// HostConfig check and be forwarded verbatim to Docker.
+			if enc := r.Header.Get("Content-Encoding"); enc != "" && !strings.EqualFold(enc, "identity") {
+				log.Printf("BLOCKED container create: unsupported Content-Encoding %q", enc)
+				http.Error(w, "Bad Request: Content-Encoding must be identity", http.StatusBadRequest)
+				return
+			}
+			if ct := r.Header.Get("Content-Type"); ct != "" {
+				mt, _, err := mime.ParseMediaType(ct)
+				if err != nil || !strings.EqualFold(mt, "application/json") {
+					log.Printf("BLOCKED container create: unsupported Content-Type %q", ct)
+					http.Error(w, "Bad Request: Content-Type must be application/json", http.StatusBadRequest)
+					return
+				}
+			}
+
+			limited := http.MaxBytesReader(w, r.Body, maxCreateBodyBytes)
+			body, err := io.ReadAll(limited)
+			r.Body.Close()
+			if err != nil {
+				log.Printf("BLOCKED container create: body read error: %v", err)
+				http.Error(w, "Bad Request: body too large or unreadable", http.StatusBadRequest)
+				return
+			}
+
+			var req ContainerCreateRequest
+			if err := json.Unmarshal(body, &req); err != nil {
+				log.Printf("BLOCKED container create: malformed JSON: %v", err)
+				http.Error(w, "Bad Request: malformed JSON body", http.StatusBadRequest)
+				return
+			}
+			if reason := checkHostConfig(req.HostConfig); reason != "" {
+				log.Printf("BLOCKED container create: %s", reason)
+				http.Error(w, fmt.Sprintf("Forbidden: %s", reason), http.StatusForbidden)
+				return
+			}
+
+			// Strip Docker socket mounts — in TCP-only setups these would be
+			// rejected by the socket-proxy allowlist anyway.
+			body, _ = stripDockerSocketMounts(body)
+
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			r.ContentLength = int64(len(body))
+		}
+		proxy.ServeHTTP(w, r)
+	})
+	return mux
+}
+
 func main() {
 	upstream := os.Getenv("DOCKER_FILTER_UPSTREAM")
 	if upstream == "" {
@@ -184,44 +251,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("invalid upstream URL: %v", err)
 	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" && isNetworkMutation(r.URL.Path) {
-			log.Printf("BLOCKED network connect/disconnect: %s", r.URL.Path)
-			http.Error(w, "Forbidden: network connect/disconnect is not allowed", http.StatusForbidden)
-			return
-		}
-		if r.Method == "POST" && isContainerCreate(r.URL.Path) {
-			body, err := io.ReadAll(r.Body)
-			r.Body.Close()
-			if err != nil {
-				http.Error(w, "failed to read body", http.StatusInternalServerError)
-				return
-			}
-
-			var req ContainerCreateRequest
-			if err := json.Unmarshal(body, &req); err == nil {
-				if reason := checkHostConfig(req.HostConfig); reason != "" {
-					log.Printf("BLOCKED container create: %s", reason)
-					http.Error(w, fmt.Sprintf("Forbidden: %s", reason), http.StatusForbidden)
-					return
-				}
-			}
-
-			// Strip Docker socket mounts — in TCP-only setups these would be
-			// rejected by the socket-proxy allowlist anyway.
-			body, _ = stripDockerSocketMounts(body)
-
-			r.Body = io.NopCloser(bytes.NewReader(body))
-			r.ContentLength = int64(len(body))
-		}
-		proxy.ServeHTTP(w, r)
-	})
 
 	log.Printf("docker-filter-proxy listening on %s, upstream %s", listen, upstream)
-	if err := http.ListenAndServe(listen, mux); err != nil {
+	if err := http.ListenAndServe(listen, newProxyHandler(target)); err != nil {
 		log.Fatal(err)
 	}
 }
