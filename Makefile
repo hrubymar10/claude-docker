@@ -45,10 +45,18 @@ test: ## Run host-side integration tests
 	@echo "Running tests (branch: $(GIT_BRANCH), $(GIT_SHA))..."
 	@bash test/test-claude-docker.sh
 	@bash test/test-git-wrapper.sh
+	@bash test/test-vscode-wrapper.sh
+	@bash test/test-wrappers-mock.sh
+	@bash test/test-preflight-overrides.sh
+	@bash test/test-compose-config.sh
 
 test-verbose: ## Run tests with bash -x tracing
 	@bash -x test/test-claude-docker.sh
 	@bash -x test/test-git-wrapper.sh
+	@bash -x test/test-vscode-wrapper.sh
+	@bash -x test/test-wrappers-mock.sh
+	@bash -x test/test-preflight-overrides.sh
+	@bash -x test/test-compose-config.sh
 
 ##@ Docker image
 
