@@ -295,7 +295,6 @@ Current tests cover:
 - start-time preflight/override generation with mocked `docker`
 - `docker compose config` rendering smoke test
 - VS Code wrapper forwarding
-- JetBrains wrapper forwarding (TTY and non-TTY paths)
 
 ## License
 
