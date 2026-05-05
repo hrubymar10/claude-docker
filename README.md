@@ -279,6 +279,24 @@ go install golang.org/x/tools/gopls@latest
 | GPG keys | `gpg-keys/*.asc` or `*.gpg` |
 | AWS credential proxy | `AWS_CRED_PROXY_PROFILES` env var (see [AWS Credentials](#aws-credentials-optional)) |
 
+## Testing
+
+```bash
+bash -n bin/claude-docker bin/claude-docker-ctrl bin/claude-docker-vscode-wrapper bin/claude-docker-jetbrains-wrapper bin/lib/session-cleanup.sh scripts/*.sh test/*.sh
+make test
+```
+
+Current tests cover:
+
+- mount boundary logic
+- credential helper quoting
+- session PID file naming
+- wrapper behavior with mocked `docker`
+- start-time preflight/override generation with mocked `docker`
+- `docker compose config` rendering smoke test
+- VS Code wrapper forwarding
+- JetBrains wrapper forwarding (TTY and non-TTY paths)
+
 ## License
 
 MIT
