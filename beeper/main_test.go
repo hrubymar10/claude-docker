@@ -57,8 +57,14 @@ func TestResolveAllowDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("default resolution should not error: %v", err)
 	}
-	if len(prefixes) != 1 || prefixes[0].String() != "127.0.0.0/8" {
-		t.Errorf("expected [127.0.0.0/8], got %v", prefixes)
+	want := []string{"127.0.0.0/8", "::1/128"}
+	if len(prefixes) != len(want) {
+		t.Fatalf("expected %d prefixes, got %d (%v)", len(want), len(prefixes), prefixes)
+	}
+	for i, w := range want {
+		if prefixes[i].String() != w {
+			t.Errorf("prefix[%d]: expected %q, got %q", i, w, prefixes[i].String())
+		}
 	}
 }
 

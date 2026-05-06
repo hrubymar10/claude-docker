@@ -13,7 +13,7 @@ import (
 
 const (
 	defaultBindAddr  = "127.0.0.1:9999"
-	defaultAllowList = "127.0.0.0/8"
+	defaultAllowList = "127.0.0.0/8,::1/128"
 )
 
 func beep(w http.ResponseWriter, _ *http.Request) {
