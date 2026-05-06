@@ -60,6 +60,16 @@ RUN chmod +x /tmp/go-install.sh && /tmp/go-install.sh "${GO_VERSION}" \
     && rm -rf /root/go /root/.cache/go-build
 ENV PATH="/usr/local/go/bin:${PATH}"
 
+# ── Extra user-specified Go packages (no Dockerfile edit needed) ──
+ARG EXTRA_GO_PACKAGES=""
+RUN if [ -n "$EXTRA_GO_PACKAGES" ]; then \
+      set -e; \
+      for pkg in $EXTRA_GO_PACKAGES; do \
+        env GOBIN=/usr/local/bin go install "$pkg"; \
+      done; \
+      rm -rf /root/go /root/.cache/go-build; \
+    fi
+
 # ── Terraform + Terragrunt ────────────────────────────────────────
 RUN ARCH=$(uname -m) \
     && case "$ARCH" in x86_64) ARCH=amd64 ;; aarch64) ARCH=arm64 ;; esac \
