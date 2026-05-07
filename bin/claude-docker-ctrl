@@ -356,6 +356,10 @@ setup_env() {
   # Apply exclude masks (must run before ALLOWED_BIND_MOUNTS)
   apply_excludes
 
+  # Validate compose files — surfaces YAML parse errors with a clear message
+  # instead of silently failing inside the ALLOWED_BIND_MOUNTS pipeline.
+  validate_compose_files
+
   # Allowed bind mounts for socket proxy — derived from all compose files.
   if [[ -z "${ALLOWED_BIND_MOUNTS:-}" ]]; then
     ALLOWED_BIND_MOUNTS=$(
@@ -367,6 +371,29 @@ setup_env() {
         | paste -sd, -
     )
     export ALLOWED_BIND_MOUNTS
+  fi
+}
+
+# ── Compose file validation ──────────────────────────────────────
+# Runs `docker compose config -q` against the merged file set and, on
+# failure, prints the offending files plus the parser's stderr so the
+# user can see exactly what's wrong (e.g. malformed docker-compose.local.yml).
+validate_compose_files() {
+  local errors
+  if ! errors=$(docker compose "${COMPOSE_FILES[@]}" config -q 2>&1); then
+    {
+      echo "Error: invalid Docker Compose configuration."
+      echo ""
+      echo "Files checked:"
+      local i
+      for ((i = 0; i < ${#COMPOSE_FILES[@]}; i++)); do
+        [[ "${COMPOSE_FILES[$i]}" == "-f" ]] && echo "  - ${COMPOSE_FILES[$((i + 1))]}"
+      done
+      echo ""
+      echo "Details:"
+      printf '%s\n' "$errors" | sed 's/^/  /'
+    } >&2
+    exit 1
   fi
 }
 
