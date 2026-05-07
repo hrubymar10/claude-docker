@@ -39,9 +39,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/session-cleanup.sh"
 
 SESSION_ID="$$-$RANDOM-$(date +%s)"
-
-# No watchdog needed: non-TTY docker exec (-i) is a regular child process
-# that dies with the parent, so run_session_cleanup always runs below.
+start_session_watchdog "$CONTAINER" "$SESSION_ID" "$$"
 
 docker exec -i \
   -e "CLAUDE_SESSION_ID=$SESSION_ID" \

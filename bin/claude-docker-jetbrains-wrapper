@@ -47,11 +47,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/session-cleanup.sh"
 
 SESSION_ID="$$-$RANDOM-$(date +%s)"
-
-# Watchdog only needed for TTY mode (terminal close doesn't propagate signals)
-if [ -t 0 ]; then
-  start_session_watchdog "$CONTAINER" "$SESSION_ID" "$$"
-fi
+start_session_watchdog "$CONTAINER" "$SESSION_ID" "$$"
 
 docker exec $DOCKER_FLAGS \
   -e "CLAUDE_SESSION_ID=$SESSION_ID" \
