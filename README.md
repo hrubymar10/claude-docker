@@ -20,6 +20,18 @@ The friction trade-off goes one way on purpose: **the sandbox must not get in ou
 
 In short: paranoia calibrated to "AI mental breakdown", not to "nation-state in your chat window".
 
+## Siblings
+
+`claude-docker` is one of several sibling projects that apply the same sandboxing model to different AI coding agents. They share the security philosophy (filtered Docker socket, path mirroring, git-push wrapper, scope above) and most of the implementation, but each is adapted to its agent's config and auth model.
+
+| Project | Wraps |
+| --- | --- |
+| [`claude-docker`](https://github.com/hrubymar10/claude-docker) (this project) | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) |
+| [`codex-docker`](https://github.com/hrubymar10/codex-docker) | [OpenAI Codex CLI](https://github.com/openai/codex) |
+| [`pi-docker`](https://github.com/hrubymar10/pi-docker) | [pi](https://shittycodingagent.ai) |
+
+Pick by which agent you actually use day to day. Running more than one in parallel is fine — the containers are independent.
+
 ## Features
 
 - **Isolated execution** — Claude runs in an Alpine container, can't touch your host directly
