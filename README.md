@@ -105,15 +105,11 @@ bin/claude-docker-ctrl exec
 
 **VSCode:**
 
-```bash
-ln -sf $(pwd)/bin/claude-docker-vscode-wrapper /usr/local/bin/claude-docker-vscode-wrapper
-```
-
-Add to VSCode `settings.json`:
+Add to VSCode `settings.json` — `claudeProcessWrapper` requires an absolute path, so point it at the wrapper inside the repo:
 
 ```json
 {
-    "claudeCode.claudeProcessWrapper": "/usr/local/bin/claude-docker-vscode-wrapper",
+    "claudeCode.claudeProcessWrapper": "/path/to/claude-docker/bin/claude-docker-vscode-wrapper",
     "claudeCode.useTerminal": false
 }
 ```

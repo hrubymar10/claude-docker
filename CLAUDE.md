@@ -51,15 +51,14 @@ The `claude-docker-ctrl` script automatically merges both files. If `config/dock
 
 ## VSCode Integration
 
-Set in VSCode `settings.json`:
+`claudeProcessWrapper` requires an absolute path. Point it directly at the wrapper inside the repo:
+
 ```json
 {
-    "claudeCode.claudeProcessWrapper": "/usr/local/bin/claude-docker-vscode-wrapper",
+    "claudeCode.claudeProcessWrapper": "/path/to/claude-docker/bin/claude-docker-vscode-wrapper",
     "claudeCode.useTerminal": false
 }
 ```
-
-Symlink the wrapper: `ln -sf $(pwd)/bin/claude-docker-vscode-wrapper /usr/local/bin/claude-docker-vscode-wrapper`
 
 **Critical:** `useTerminal: false` is required — when `true`, the wrapper is ignored and VSCode calls `claude` directly.
 
@@ -71,8 +70,6 @@ In GoLand → **Settings → Tools → Claude Code** → set **Claude command** 
 ```
 /path/to/claude-docker/bin/claude-docker-jetbrains-wrapper
 ```
-
-Optionally symlink it: `ln -sf $(pwd)/bin/claude-docker-jetbrains-wrapper /usr/local/bin/claude-docker-jetbrains-wrapper`
 
 The wrapper auto-detects TTY: uses `-it` in the embedded terminal, `-i` only for non-interactive/stream-json mode. All arguments are passed through to `claude` inside the container.
 
