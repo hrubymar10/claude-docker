@@ -262,7 +262,7 @@ The container cannot access the host Docker socket directly. All Docker API call
 - Restricts bind mounts to directories actually mounted in the container
 - Auto-derives the allowlist from your compose volume configuration
 
-Additionally, the `git` binary is replaced with a wrapper that blocks pushes to protected branches (`main`, `master` by default), and a `docker` wrapper blocks dangerous subcommands (`run`, `build`, `cp`).
+Additionally, the `git` binary is replaced with a wrapper that blocks pushes to protected branches (`main`, `master` by default). This is defense-in-depth — `git-real` is still callable directly by the unprivileged user, so the wrapper catches *bad-prompt* mistakes but won't defeat a deliberately adversarial Claude (see [Scope](#scope-what-this-is-what-it-isnt)). For real branch protection, enforce it server-side. A `docker` wrapper blocks dangerous subcommands (`run`, `build`, `cp`).
 
 See [SECURITY_ISSUES.md](SECURITY_ISSUES.md) for known limitations.
 

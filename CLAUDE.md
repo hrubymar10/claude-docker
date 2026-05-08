@@ -19,7 +19,7 @@ bin/claude-docker-ctrl rebuild  # rebuild image from scratch + restart
 - `docker-compose.yml` — base container config (auth, socket proxy, filter proxy, Go cache)
 - `scripts/` — shell scripts copied into the container at build time:
   - `entrypoint.sh` — runtime setup: socket proxy wait, git credentials, GPG import, user drop
-  - `git-wrapper.sh` — blocks `git push` to protected branches. Replaces `/usr/bin/git` to prevent bypass.
+  - `git-wrapper.sh` — blocks `git push` to protected branches. Replaces `/usr/bin/git`. Defense-in-depth only: `git-real` is still readable+executable by the unprivileged user, so a determined caller can invoke `/usr/libexec/git-real/git` directly. Real branch protection must come from the upstream (server-side hook).
   - `docker-wrapper.sh` — allowlists safe docker subcommands, blocks `run`/`build`/`cp`. Replaces `/usr/bin/docker`; the real binary is moved to `/usr/libexec/docker-real/docker` so the wrapper cannot be bypassed by absolute path.
   - `claude-session.sh` — process-group wrapper that ensures claude + children (gopls) are killed on disconnect
   - `go-install.sh` — Dockerfile helper to download Go by version
@@ -163,11 +163,15 @@ Instead of mounting the host Docker socket directly (which allows full host acce
 
 ### Git Push Protection
 
-The real `/usr/bin/git` is renamed to `/usr/libexec/git-real/git` at build time. The wrapper replaces it at `/usr/bin/git`, so there is no bypass path (e.g., calling `/usr/bin/git push` still hits the wrapper). Push is allowed to all branches except those listed in `GIT_PROTECTED_BRANCHES` (default: `main master`).
+The real `/usr/bin/git` is renamed to `/usr/libexec/git-real/git` at build time and replaced at `/usr/bin/git` by `scripts/git-wrapper.sh`. The wrapper rejects `git push` when the destination is one of the branches listed in `GIT_PROTECTED_BRANCHES` (default: `main master`), parsing refspecs and flag forms (`-f`, `+`, `HEAD:master`, `--repo`, etc.) so the obvious bypasses don't slip through.
 
-The same pattern applies to docker: the real `/usr/bin/docker` is renamed to `/usr/libexec/docker-real/docker` and replaced by `docker-wrapper.sh`, so calling `/usr/bin/docker run …` directly hits the allowlist instead of the unfiltered binary.
+This is **defense-in-depth, not a security boundary.** `git-real` keeps its default `0755 root:root` permissions, so the unprivileged user can still call `/usr/libexec/git-real/git push -f origin main` directly to skip the wrapper. We've consciously kept it that way: locking it down to `0700` only buys partial defense (the container has `NOPASSWD: ALL` sudo, so a determined caller can still escalate), at the cost of friction on every git invocation. The wrapper exists to catch *bad-prompt* mistakes — accidental pushes to `master` — not to defeat a deliberately adversarial Claude. See the README "Scope" section for the threat model.
 
-See `SECURITY_ISSUES.md` for known escape vectors.
+If you need real branch protection, enforce it server-side (a pre-receive hook on the upstream that rejects pushes to protected refs from this token).
+
+The same wrapper pattern applies to docker, with one important difference: `docker-real` is at `/usr/libexec/docker-real/docker` and the wrapper at `/usr/bin/docker` covers absolute-path invocations. The docker wrapper closes its bypass path because no equivalent friction-tax-on-every-call concern applies.
+
+See `SECURITY_ISSUES.md` for known escape vectors and the residual gaps documented above.
 
 ## Design Decisions
 
