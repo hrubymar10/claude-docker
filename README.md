@@ -110,11 +110,14 @@ Add to VSCode `settings.json` — `claudeProcessWrapper` requires an absolute pa
 ```json
 {
     "claudeCode.claudeProcessWrapper": "/path/to/claude-docker/bin/claude-docker-vscode-wrapper",
-    "claudeCode.useTerminal": false
+    "claudeCode.useTerminal": false,
+    "claudeCode.allowDangerouslySkipPermissions": true
 }
 ```
 
 > **Important:** `useTerminal` must be `false`. When `true`, the wrapper is bypassed and Claude runs on the host.
+>
+> **Why `allowDangerouslySkipPermissions: true`?** Claude is already running inside the sandbox: the filesystem is limited to your mounted project dirs, the Docker socket is filtered, and `git push` to protected branches is blocked at the wrapper. The container is the safety net, so the per-action permission prompts mostly add friction without adding protection. Leave it off if you mount sensitive directories you don't fully trust Claude with.
 
 ## Commands
 

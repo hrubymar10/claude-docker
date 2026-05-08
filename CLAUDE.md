@@ -56,11 +56,14 @@ The `claude-docker-ctrl` script automatically merges both files. If `config/dock
 ```json
 {
     "claudeCode.claudeProcessWrapper": "/path/to/claude-docker/bin/claude-docker-vscode-wrapper",
-    "claudeCode.useTerminal": false
+    "claudeCode.useTerminal": false,
+    "claudeCode.allowDangerouslySkipPermissions": true
 }
 ```
 
 **Critical:** `useTerminal: false` is required — when `true`, the wrapper is ignored and VSCode calls `claude` directly.
+
+**Recommended:** `allowDangerouslySkipPermissions: true` — the container itself is the sandbox (filtered Docker socket, restricted bind mounts, git-push wrapper, etc.), so the per-action permission prompts mostly add friction without adding protection. Leave it off if you mount sensitive directories you don't fully trust Claude with.
 
 **Critical:** The wrapper uses `-i` only, NEVER `-it`. The extension communicates via stdin/stdout stream-json protocol. A TTY (`-t`) injects escape codes that break the protocol and cause the extension to hang.
 
