@@ -229,6 +229,74 @@ When the SSO session expires (~12h), re-run `aws sso login` on the host — the 
 | `AWS_CRED_PROXY_PROFILES` | _(unset)_ | Comma-separated `name:region` pairs. Proxy only starts when set. |
 | `AWS_CRED_PROXY_PORT` | `9998` | Port for the credential proxy on the host. |
 
+## SSH Agent Forwarding (Optional)
+
+Claude inside the container can use your host SSH agent for git pushes, `ssh` connections, etc. — no private keys are copied into the container.
+
+### How it works
+
+If `SSH_AUTH_SOCK` is set on the host (i.e. an `ssh-agent` is running), `claude-docker-ctrl start` automatically launches a `socat` TCP relay on `127.0.0.1:19922` that bridges the host's Unix-domain agent socket. Inside the container, `SSH_AUTH_SOCK` is configured to point at the relay over `host.docker.internal`, and `~/.ssh/known_hosts` is bind-mounted in. Use `ssh-add -l` inside the container to confirm the agent is reachable.
+
+### Setup
+
+1. Make sure `socat` is installed on the host. On macOS: `brew install socat`. On Linux: install via your package manager.
+2. Make sure your SSH agent is running on the host (this is the default on most systems — `echo "$SSH_AUTH_SOCK"` should print a path).
+3. Add your key once: `ssh-add ~/.ssh/id_ed25519` (or whichever key).
+4. Start (or restart) the container: `bin/claude-docker-ctrl start`.
+
+### Usage inside the container
+
+```bash
+ssh-add -l                   # list keys forwarded from the host agent
+git push origin feature-x    # uses the forwarded agent
+```
+
+The relay starts on `claude-docker-ctrl start` and stops on `claude-docker-ctrl stop`. Status is shown in `claude-docker-ctrl status`. If `socat` isn't available on the host, the relay is skipped with a warning and the rest of the container still starts normally.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SSH_AUTH_SOCK` | _(host)_ | Read from your shell environment. If unset, no relay is started. |
+
+## Beeper (Optional)
+
+A tiny host-side HTTP server that plays a sound when Claude pings it. Useful as a notification channel — e.g., have your `claude-notifier` hook fire `curl http://host.docker.internal:9999/beep` whenever Claude finishes a long-running task or hits a permission prompt.
+
+### Setup
+
+1. Start the beeper:
+
+   ```bash
+   bin/claude-docker-ctrl beeper-start
+   ```
+
+   The Go binary is built on first run.
+
+2. Stop it when you're done:
+
+   ```bash
+   bin/claude-docker-ctrl beeper-stop
+   ```
+
+3. Wire your `claude-notifier` script (see `config/claude-notifier.example`) to call the beeper. The container reaches the host at `host.docker.internal:9999`.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BEEPER_BIND` | `127.0.0.1:9999` | `host:port` to listen on. Host must be an IP literal (no hostnames). Set to `0.0.0.0:9999` to expose on all interfaces. |
+| `BEEPER_ALLOW` | `127.0.0.0/8` | Comma-separated source IPs / CIDRs allowed to call the beeper. Bare IPs are normalised to `/32` (v4) / `/128` (v6). Anything else gets a 403. |
+
+The defaults are sufficient for container-to-host traffic via `host.docker.internal` on Docker Desktop. For VPN clients or other remote callers, widen `BEEPER_BIND` and add the source range to `BEEPER_ALLOW`:
+
+```bash
+export BEEPER_BIND=0.0.0.0:9999
+export BEEPER_ALLOW=127.0.0.0/8,172.28.47.0/24
+```
+
+`X-Forwarded-For` is not honoured — this is a direct-connection service.
+
 ## How It Works
 
 ```
