@@ -288,12 +288,14 @@ A tiny host-side HTTP server that plays a sound when Claude pings it. Useful as 
 | `BEEPER_BIND` | `127.0.0.1:9999` | `host:port` to listen on. Host must be an IP literal (no hostnames). Set to `0.0.0.0:9999` to expose on all interfaces. |
 | `BEEPER_ALLOW` | `127.0.0.0/8` | Comma-separated source IPs / CIDRs allowed to call the beeper. Bare IPs are normalised to `/32` (v4) / `/128` (v6). Anything else gets a 403. |
 
-The defaults are sufficient for container-to-host traffic via `host.docker.internal` on Docker Desktop. For VPN clients or other remote callers, widen `BEEPER_BIND` and add the source range to `BEEPER_ALLOW`:
+The defaults are sufficient for container-to-host traffic via `host.docker.internal` on Docker Desktop / OrbStack (it forwards to host loopback). For VPN clients or other remote callers, widen `BEEPER_BIND` and add the source range to `BEEPER_ALLOW`:
 
 ```bash
 export BEEPER_BIND=0.0.0.0:9999
 export BEEPER_ALLOW=127.0.0.0/8,172.28.47.0/24
 ```
+
+**Linux note:** on Linux Docker Engine, `host.docker.internal` resolves to the Docker bridge gateway (typically in `172.17.0.0/16` or `172.16.0.0/12`), not host loopback. The default `BEEPER_ALLOW=127.0.0.0/8` will block those requests. Add the bridge subnet to the allowlist. Note: `beeper/main.go` calls `afplay` (macOS only) — sound playback does not work on Linux.
 
 `X-Forwarded-For` is not honoured — this is a direct-connection service.
 
