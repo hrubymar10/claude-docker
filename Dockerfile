@@ -105,6 +105,10 @@ ENV DISABLE_AUTOUPDATER=1
 # ── LSP servers (for Claude Code LSP tool) ────────────────────────
 RUN npm install -g typescript typescript-language-server pyright
 
+# ── Extra user-specified npm packages (no Dockerfile edit needed) ──
+ARG EXTRA_NPM_PACKAGES=""
+RUN if [ -n "$EXTRA_NPM_PACKAGES" ]; then npm install -g $EXTRA_NPM_PACKAGES; fi
+
 # ── Environment marker ────────────────────────────────────────────
 RUN touch /this-is-claude-docker-env
 

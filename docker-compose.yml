@@ -51,6 +51,7 @@ services:
         CONTAINER_SHELL: ${CONTAINER_SHELL:-/bin/bash}
         EXTRA_PACKAGES: ${EXTRA_PACKAGES:-}
         EXTRA_GO_PACKAGES: ${EXTRA_GO_PACKAGES:-}
+        EXTRA_NPM_PACKAGES: ${EXTRA_NPM_PACKAGES:-}
         CC_VERSION: ${CC_VERSION:-}
     volumes:
       - ${CLAUDE_JSON_PATH}:/run/.claude.json.host:ro
