@@ -109,6 +109,8 @@ RUN npm install -g typescript typescript-language-server pyright
 ARG EXTRA_NPM_PACKAGES=""
 RUN if [ -n "$EXTRA_NPM_PACKAGES" ]; then npm install -g $EXTRA_NPM_PACKAGES; fi
 
+ENV NODE_PATH=/usr/local/lib/node_modules
+
 # ── Environment marker ────────────────────────────────────────────
 RUN touch /this-is-claude-docker-env
 
