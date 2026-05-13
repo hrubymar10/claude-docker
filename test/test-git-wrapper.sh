@@ -42,6 +42,17 @@ allow() {
   if should_block_push "$@"; then nope "should allow: $name (args: $*)"
   else ok "allow: $name"; fi
 }
+# tag_block / tag_allow exercise should_block_tag_push.
+tag_block() {
+  local name="$1"; shift
+  if should_block_tag_push "$@"; then ok "tag block: $name"
+  else nope "should block tag push: $name (args: $*)"; fi
+}
+tag_allow() {
+  local name="$1"; shift
+  if should_block_tag_push "$@"; then nope "should allow tag push: $name (args: $*)"
+  else ok "tag allow: $name"; fi
+}
 
 echo ""
 echo "═══ Vuln 9: full-refname refspec must be normalised ═══"
@@ -61,7 +72,7 @@ echo ""
 echo "═══ Allowed refspecs ═══"
 allow "feature"                        origin feature
 allow "HEAD:refs/heads/feature"        origin HEAD:refs/heads/feature
-allow "tag"                            origin refs/tags/v1.0
+allow "tag (branch check ignores)"     origin refs/tags/v1.0
 allow "main as source"                 origin main:feature
 allow "feature force"                  origin +feature
 
@@ -104,6 +115,23 @@ GIT_PROTECTED_BRANCHES="develop release" block "develop full"  origin HEAD:refs/
 GIT_PROTECTED_BRANCHES="develop release" block "release short" origin release
 GIT_PROTECTED_BRANCHES="develop release" allow "main not protected" origin main
 GIT_PROTECTED_BRANCHES="refs/heads/develop" block "preformatted protected" origin develop
+
+echo ""
+echo "═══ Tag pushes are blocked ═══"
+tag_block "--tags"                     origin --tags
+tag_block "--follow-tags"              --follow-tags origin
+tag_block "--mirror"                   --mirror origin
+tag_block "refs/tags/v1.0"             origin refs/tags/v1.0
+tag_block "force refs/tags/v1.0"       origin +refs/tags/v1.0
+tag_block "HEAD:refs/tags/v1.0"        origin HEAD:refs/tags/v1.0
+tag_block "delete refs/tags/v1.0"      origin :refs/tags/v1.0
+tag_block "tag <name> shorthand"       origin tag v1.0
+tag_block "tag with branch refspec"    origin feature refs/tags/v1.0
+tag_allow "branch push, no tags"       origin feature
+tag_allow "branch push, full refname"  origin HEAD:refs/heads/feature
+tag_allow "force branch, no tags"      origin +feature
+tag_allow "no remote"                  ""
+tag_allow "no args"
 
 # Cleanup
 rm -f "$STUB_GIT"

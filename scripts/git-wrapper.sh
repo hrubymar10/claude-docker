@@ -97,15 +97,74 @@ should_block_push() {
   return 1
 }
 
+# Returns 0 if the push includes one or more tags, 1 otherwise.
+# Covers the documented forms: `--tags`, `--follow-tags`, `--mirror`, an
+# explicit `refs/tags/<name>` refspec destination, and the `<remote> tag
+# <name>` two-word shorthand.
+should_block_tag_push() {
+  local seen_dashdash=0
+  local positionals=()
+  local arg
+
+  while [ $# -gt 0 ]; do
+    arg="$1"; shift
+    if [ "$seen_dashdash" -eq 0 ]; then
+      case "$arg" in
+        --)
+          seen_dashdash=1
+          continue
+          ;;
+        --tags|--follow-tags|--mirror)
+          return 0
+          ;;
+        --repo|--push-option|--receive-pack|--exec|-o)
+          [ $# -gt 0 ] && shift
+          continue
+          ;;
+        -*)
+          continue
+          ;;
+      esac
+    fi
+    positionals+=("$arg")
+  done
+
+  # `git push <remote> tag <name>` — documented shorthand for pushing a
+  # single tag.
+  if [ "${#positionals[@]}" -ge 3 ] && [ "${positionals[1]}" = "tag" ]; then
+    return 0
+  fi
+
+  local refspecs=("${positionals[@]:1}")
+  local refspec stripped dst
+  for refspec in "${refspecs[@]}"; do
+    stripped="${refspec#+}"
+    case "$stripped" in
+      *:*) dst="${stripped##*:}" ;;
+      *)   dst="$stripped" ;;
+    esac
+    [ -z "$dst" ] && continue
+    case "$dst" in
+      refs/tags/*) return 0 ;;
+    esac
+  done
+
+  return 1
+}
+
 # When sourced (e.g. by tests), expose the functions and stop here. Without
 # this guard the `exec` below would replace the test process with git.
 if [ "${BASH_SOURCE[0]:-$0}" != "$0" ]; then
   return 0
 fi
 
-# Block push to protected branches.
+# Block push to protected branches and any push that includes tags.
 if [ "${1:-}" = "push" ]; then
   shift
+  if should_block_tag_push "$@"; then
+    echo "git push of tags is blocked inside this container" >&2
+    exit 1
+  fi
   if should_block_push "$@"; then
     echo "git push to a protected branch is blocked inside this container" >&2
     echo "Protected branches: ${GIT_PROTECTED_BRANCHES:-main master}" >&2
