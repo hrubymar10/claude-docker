@@ -5,6 +5,7 @@ RUN apk add --no-cache \
     git \
     make \
     bash \
+    shellcheck \
     ca-certificates \
     curl \
     jq \
