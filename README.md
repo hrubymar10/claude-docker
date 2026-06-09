@@ -259,6 +259,36 @@ The relay starts on `claude-docker-ctrl start` and stops on `claude-docker-ctrl 
 |----------|---------|-------------|
 | `SSH_AUTH_SOCK` | _(host)_ | Read from your shell environment. If unset, no relay is started. |
 
+## GitLab CLI (glab) (Optional)
+
+The `glab` CLI is pre-installed, mirroring the bundled `gh` (GitHub CLI). The key thing to understand: the GitLab **API** — which is everything `glab` does (merge requests, pipelines, issues) — can only authenticate with a **token**, never an SSH key. SSH keys cover git transport only.
+
+So there are two independent layers:
+
+- **Git push/pull/clone** to GitLab — already works with **no token** via [SSH agent forwarding](#ssh-agent-forwarding-optional). Nothing to configure beyond the agent.
+- **The `glab` CLI** — needs a token. There's no SSH-key path to the GitLab API (same as `gh`).
+
+### Setup
+
+1. Authenticate `glab` once **on the host** (OAuth web flow — no manual PAT needed):
+
+   ```bash
+   glab auth login --hostname gitlab.com --web
+   ```
+
+   Alternatively, set `GITLAB_TOKEN` in `config/.env` to a Personal Access Token with the `api` scope.
+
+2. Start (or rebuild) the container: `bin/claude-docker-ctrl start`. `claude-docker-ctrl` reads the host token via `glab config get token` and passes it into the container as `GITLAB_TOKEN`, where `glab` picks it up automatically.
+
+Git transport is left on SSH — no `git@gitlab.com:` → HTTPS rewrite is applied, so existing remotes keep using the forwarded agent. A credential helper is still configured for `https://$GITLAB_HOST`, so HTTPS remotes work too when a token is present.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GITLAB_TOKEN` | `$(glab config get token --host gitlab.com)` | Token for the `glab` CLI. Auto-detected from the host glab, or set explicitly. |
+| `GITLAB_HOST` | `gitlab.com` | Set only for self-managed GitLab. |
+
 ## Beeper (Optional)
 
 A tiny host-side HTTP server that plays a sound when Claude pings it. Useful as a notification channel — e.g., have your `claude-notifier` hook fire `curl http://host.docker.internal:9999/beep` whenever Claude finishes a long-running task or hits a permission prompt.

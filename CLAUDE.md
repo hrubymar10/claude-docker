@@ -93,6 +93,14 @@ Two modes are supported (can coexist):
 
 Both can be active simultaneously (e.g., GITHUB_TOKEN for GitHub HTTPS + SSH agent for GitLab).
 
+### GitLab CLI (glab)
+
+The `glab` CLI is pre-installed and mirrors the `gh` setup, with one fundamental difference: the GitLab **API** (everything `glab` does — MRs, pipelines, issues) can only authenticate with a **token**, never an SSH key. SSH keys cover git transport only, which already works via SSH agent forwarding.
+
+- **Token** — `GITLAB_TOKEN` is auto-detected from the host via `glab config get token --host gitlab.com`, or set explicitly in `config/.env`. Populate it on the host once with `glab auth login --hostname gitlab.com --web` (OAuth, no manual PAT), or use a Personal Access Token with the `api` scope.
+- **Host** — `GITLAB_HOST` defaults to `gitlab.com`; set it only for self-managed GitLab.
+- **Git transport stays on SSH** — unlike the GitHub path, no `insteadOf` rewrite is applied, so existing `git@gitlab.com:` remotes keep pushing/pulling over the forwarded SSH agent. A credential helper is configured for `https://$GITLAB_HOST` so HTTPS remotes also work when the token is present.
+
 ### AWS Credentials (Read-Only)
 
 A host-side credential proxy serves read-only AWS SSO credentials to the container. Only explicitly allowlisted profiles are served — all other requests are rejected.

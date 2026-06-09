@@ -31,6 +31,7 @@ RUN apk add --no-cache \
     zsh \
     unzip \
     github-cli \
+    glab \
     shadow \
     nodejs \
     npm \

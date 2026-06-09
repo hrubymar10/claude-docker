@@ -72,6 +72,10 @@ The container user has `NOPASSWD: ALL` sudo access. Claude can escalate to root 
 - Git credential helper script (embedded in bash function)
 - `~/.docker/config.json` (base64-encoded, not encrypted) for ghcr.io registry auth
 
+`GITLAB_TOKEN` (when set, for the `glab` CLI) is visible in the same way:
+- Process environment
+- Git credential helper script (`~/.git-credential-gitlab`, which references `$GITLAB_TOKEN`)
+
 **Impact:** Any process running as the container user can read these tokens.
 
 **Mitigations:** Tokens are scoped to the container. The container has no mechanism to exfiltrate them except via network (which is unrestricted — see #6).

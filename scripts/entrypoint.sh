@@ -58,6 +58,21 @@ if [[ -n "${GITHUB_TOKEN:-}" ]]; then
     url."https://github.com/".insteadOf "git@github.com:"
 fi
 
+# ── Git credential helper (GITLAB_TOKEN) ─────────────────────────
+# glab reads GITLAB_TOKEN/GITLAB_HOST from the container env directly, so the
+# CLI needs no extra config. This helper only covers git-over-HTTPS to GitLab;
+# git-over-SSH keeps working via the forwarded agent (no insteadOf rewrite, so
+# existing git@ remotes are left untouched).
+if [[ -n "${GITLAB_TOKEN:-}" ]]; then
+  GITLAB_HTTPS_HOST="${GITLAB_HOST:-gitlab.com}"
+  CRED_HELPER="$HOST_HOME/.git-credential-gitlab"
+  printf '#!/bin/sh\nprintf "username=oauth2\\npassword=%%s\\n" "$GITLAB_TOKEN"\n' > "$CRED_HELPER"
+  chmod 700 "$CRED_HELPER"
+  chown "$HOST_USER:$HOST_USER" "$CRED_HELPER"
+  gosu "$HOST_USER" /usr/libexec/git-real/git config --global \
+    credential."https://$GITLAB_HTTPS_HOST".helper "$CRED_HELPER"
+fi
+
 # ── General git credentials (non-GitHub) ──────────────────────────
 if [[ -n "${GIT_AUTH_USER:-}" && -n "${GIT_AUTH_TOKEN:-}" ]]; then
   CRED_HELPER="$HOST_HOME/.git-credential-generic"

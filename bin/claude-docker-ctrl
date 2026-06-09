@@ -299,6 +299,17 @@ setup_env() {
   fi
   export GITHUB_TOKEN
 
+  # GitLab token: prefer GITLAB_TOKEN env var, fall back to the host glab CLI.
+  # The token is only needed for the glab CLI (GitLab API) — git itself
+  # authenticates over SSH via agent forwarding and needs no token.
+  if [[ -z "${GITLAB_TOKEN:-}" ]]; then
+    if command -v glab &>/dev/null; then
+      GITLAB_TOKEN=$(glab config get token --host "${GITLAB_HOST:-gitlab.com}" 2>/dev/null) || true
+    fi
+  fi
+  export GITLAB_TOKEN
+  export GITLAB_HOST
+
   # Git identity
   if [[ -z "${GIT_USER_NAME:-}" ]]; then
     GIT_USER_NAME=$(git config user.name 2>/dev/null) || true
