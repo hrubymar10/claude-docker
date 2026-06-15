@@ -15,7 +15,7 @@ bin/claude-docker-ctrl rebuild  # rebuild image from scratch + restart
 
 ## Project Structure
 
-- `Dockerfile` — Alpine 3.23 image
+- `Dockerfile` — Alpine 3.24 image
 - `docker-compose.yml` — base container config (auth, socket proxy, filter proxy, Go cache)
 - `scripts/` — shell scripts copied into the container at build time:
   - `entrypoint.sh` — runtime setup: socket proxy wait, git credentials, GPG import, user drop

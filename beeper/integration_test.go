@@ -55,7 +55,7 @@ func TestContainerReachesBeeperViaHostDockerInternal(t *testing.T) {
 
 	cmd := exec.CommandContext(ctx,
 		"docker", "run", "--rm",
-		"alpine:3.23",
+		"alpine:3.24",
 		"wget", "-q", "--spider", "--timeout=5",
 		"http://host.docker.internal:9999/beep",
 	)
