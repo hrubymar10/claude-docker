@@ -8,6 +8,7 @@ CONTAINER_NAME="claude-docker"
 CONTAINER_USER="${HOST_USER:-$(whoami)}"
 SSH_RELAY_PID_FILE="${HOME}/.claude-docker-ssh-relay.pid"
 SSH_RELAY_PORT=19922
+AWS_PROXY_MIGRATION_CHECK=false
 
 # ── Compose file list (base + optional local override) ───────────
 COMPOSE_FILES=(-f "$PROJECT_DIR/docker-compose.yml")
@@ -167,6 +168,146 @@ apply_excludes() {
 
 die() { echo "Error: $1" >&2; exit 1; }
 
+normalize_env_key() {
+  local key="$1"
+  key="${key#"${key%%[![:space:]]*}"}"
+  key="${key%"${key##*[![:space:]]}"}"
+  if [[ "$key" =~ ^export[[:space:]]+(.+)$ ]]; then
+    key="${BASH_REMATCH[1]}"
+  fi
+  printf '%s\n' "$key"
+}
+
+aws_ai_proxy_enabled() {
+  case "${AWS_AI_PROXY_ENABLED:-false}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+parse_aws_ai_proxy_profiles() {
+  if command -v jq >/dev/null 2>&1; then
+    jq -r '.[] | "\(.name):\(.region)"' | paste -sd, -
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys; print(",".join(f"{p[\"name\"]}:{p[\"region\"]}" for p in json.load(sys.stdin)))'
+  else
+    return 127
+  fi
+}
+
+prepare_aws_ai_proxy_env() {
+  export AWS_AI_PROXY_ENABLED="${AWS_AI_PROXY_ENABLED:-false}"
+  export AWS_AI_PROXY_URL="${AWS_AI_PROXY_URL:-http://host.docker.internal:9998}"
+  export AWS_AI_PROXY_PROFILE_CONFIG=""
+
+  aws_ai_proxy_enabled || return 0
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "Warning: AWS_AI_PROXY_ENABLED is set, but curl is not available; skipping AWS proxy profile fetch." >&2
+    return 0
+  fi
+
+  local profiles_json profiles
+  profiles_json=$(curl -fsS --max-time 2 "$AWS_AI_PROXY_URL/profiles" 2>/dev/null) || {
+    echo "Warning: could not fetch AWS AI proxy profiles from $AWS_AI_PROXY_URL/profiles; continuing without AWS proxy profiles." >&2
+    return 0
+  }
+  profiles=$(printf '%s' "$profiles_json" | parse_aws_ai_proxy_profiles 2>/dev/null) || {
+    echo "Warning: could not parse AWS AI proxy profiles from $AWS_AI_PROXY_URL/profiles; install jq or python3." >&2
+    return 0
+  }
+  if [[ -z "$profiles" ]]; then
+    echo "Warning: AWS AI proxy returned no profiles from $AWS_AI_PROXY_URL/profiles." >&2
+    return 0
+  fi
+  export AWS_AI_PROXY_PROFILE_CONFIG="$profiles"
+  echo "AWS AI proxy profiles fetched: $profiles"
+}
+
+legacy_aws_proxy_env_vars() {
+  local vars=""
+  [[ -n "${AWS_CRED_PROXY_PROFILES+x}" ]] && vars="AWS_CRED_PROXY_PROFILES"
+  [[ -n "${AWS_CRED_PROXY_PORT+x}" ]] && vars="${vars:+$vars,}AWS_CRED_PROXY_PORT"
+  [[ -n "$vars" ]] || return 0
+  printf '%s\n' "$vars"
+}
+
+legacy_aws_proxy_config_vars() {
+  local env_file="$CONFIG_DIR/.env"
+  [[ -f "$env_file" ]] || return 0
+
+  local line var vars=""
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?(AWS_CRED_PROXY_PROFILES|AWS_CRED_PROXY_PORT)= ]]; then
+      var="${BASH_REMATCH[2]}"
+      [[ ",$vars," == *",$var,"* ]] || vars="${vars:+$vars,}$var"
+    fi
+  done < "$env_file"
+
+  [[ -n "$vars" ]] || return 0
+  printf '%s\n' "$vars"
+}
+
+print_aws_proxy_migration_steps() {
+  cat >&2 <<'EOF'
+Switch to aws-ai-proxy:
+  1. Install and run aws-ai-proxy on the host: https://github.com/hrubymar10/aws-ai-proxy
+  2. Configure ~/.aws-ai-proxy/config with AWS_AI_PROXY_PROFILES=<profile names>.
+  3. Set AWS_AI_PROXY_ENABLED=true in config/.env.
+  4. Set AWS_AI_PROXY_URL=http://host.docker.internal:9998 if you use a non-default URL.
+EOF
+}
+
+comment_legacy_aws_proxy_config() {
+  local env_file="$CONFIG_DIR/.env"
+  if [[ ! -f "$env_file" || -z "$(legacy_aws_proxy_config_vars)" ]]; then
+    echo "No active AWS_CRED_PROXY_* lines found in config/.env. Remove legacy variables from your shell profile or launch environment." >&2
+    return 0
+  fi
+
+  local backup tmp line
+  backup="$env_file.bak.$(date +%Y%m%d%H%M%S)"
+  tmp=$(mktemp "${TMPDIR:-/tmp}/claude-docker-env.XXXXXX")
+  cp "$env_file" "$backup"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ ! "$line" =~ ^[[:space:]]*# ]] \
+      && [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?(AWS_CRED_PROXY_PROFILES|AWS_CRED_PROXY_PORT)= ]]; then
+      printf '# deprecated: %s\n' "$line"
+    else
+      printf '%s\n' "$line"
+    fi
+  done < "$env_file" > "$tmp"
+  mv "$tmp" "$env_file"
+  echo "Commented legacy AWS_CRED_PROXY_* lines in config/.env (backup: $backup)." >&2
+}
+
+check_aws_proxy_migration() {
+  "$AWS_PROXY_MIGRATION_CHECK" || return 0
+  aws_ai_proxy_enabled && return 0
+
+  local env_vars="$1"
+  local config_vars
+  config_vars=$(legacy_aws_proxy_config_vars)
+  [[ -n "$env_vars" || -n "$config_vars" ]] || return 0
+
+  echo "Warning: legacy AWS_CRED_PROXY_* settings are ignored by claude-docker." >&2
+  [[ -n "$env_vars" ]] && echo "  process environment: $env_vars" >&2
+  [[ -n "$config_vars" ]] && echo "  config/.env: $config_vars" >&2
+
+  if [[ -t 0 ]]; then
+    echo "Choose: [r] comment them out of config/.env, [s] show aws-ai-proxy steps, [i] ignore once." >&2
+    local choice
+    read -r -p "AWS proxy migration [r/s/i]: " choice || choice=""
+    case "$choice" in
+      r|R) comment_legacy_aws_proxy_config ;;
+      s|S) print_aws_proxy_migration_steps ;;
+      *) echo "Continuing without AWS proxy migration changes." >&2 ;;
+    esac
+  else
+    print_aws_proxy_migration_steps
+  fi
+}
+
 # ── CLAUDE_CONFIG_DIR pre-flight check ───────────────────────────
 # Docker file-level bind mounts break on atomic writes (moby/moby#6011).
 # CLAUDE_CONFIG_DIR moves .claude.json inside ~/.claude/ (a directory
@@ -250,6 +391,9 @@ Add it to config/docker-compose.local.yml volumes, e.g.:
 
 # ── Export environment for docker compose ────────────────────────
 setup_env() {
+  local legacy_aws_proxy_env_source
+  legacy_aws_proxy_env_source=$(legacy_aws_proxy_env_vars)
+
   # Load config/.env if present (values don't override existing env vars)
   if [[ -f "$CONFIG_DIR/.env" ]]; then
     while IFS= read -r line || [[ -n "$line" ]]; do
@@ -258,6 +402,7 @@ setup_env() {
       [[ -z "${line// /}" ]] && continue
       local key="${line%%=*}"
       local val="${line#*=}"
+      key=$(normalize_env_key "$key")
       if   [[ "$val" == '"'*'"' ]]; then val="${val#\"}"; val="${val%\"}"
       elif [[ "$val" == "'"*"'" ]]; then val="${val#\'}"; val="${val%\'}"; fi
       # Only set if not already in environment
@@ -266,6 +411,7 @@ setup_env() {
       fi
     done < "$CONFIG_DIR/.env"
   fi
+  check_aws_proxy_migration "$legacy_aws_proxy_env_source"
 
   # Host user identity and home directory
   export HOST_USER HOST_UID HOST_HOME
@@ -408,58 +554,6 @@ validate_compose_files() {
   fi
 }
 
-# ── AWS credential proxy management ──────────────────────────────
-AWS_CRED_PROXY_PID_FILE="${HOME}/.claude-docker-aws-cred-proxy.pid"
-AWS_CRED_PROXY_PORT="${AWS_CRED_PROXY_PORT:-9998}"
-
-start_aws_cred_proxy() {
-  [[ -n "${AWS_CRED_PROXY_PROFILES:-}" ]] || return 0
-
-  if [[ -f "$AWS_CRED_PROXY_PID_FILE" ]] && kill -0 "$(cat "$AWS_CRED_PROXY_PID_FILE")" 2>/dev/null; then
-    echo "AWS credential proxy already running (PID $(cat "$AWS_CRED_PROXY_PID_FILE"))"
-    return
-  fi
-
-  if ! command -v go &>/dev/null; then
-    echo "Warning: go not found, skipping AWS credential proxy" >&2
-    return
-  fi
-
-  local proxy_bin="$PROJECT_DIR/aws-cred-proxy/aws-cred-proxy"
-  echo "Building AWS credential proxy..."
-  go build -o "$proxy_bin" "$PROJECT_DIR/aws-cred-proxy/main.go"
-
-  AWS_CRED_PROXY_PROFILES="$AWS_CRED_PROXY_PROFILES" \
-  AWS_CRED_PROXY_PORT="$AWS_CRED_PROXY_PORT" \
-    "$proxy_bin" &
-  local pid=$!
-  echo "$pid" > "$AWS_CRED_PROXY_PID_FILE"
-  echo "AWS credential proxy started (PID $pid) on http://127.0.0.1:$AWS_CRED_PROXY_PORT"
-}
-
-stop_aws_cred_proxy() {
-  if [[ -f "$AWS_CRED_PROXY_PID_FILE" ]]; then
-    local pid
-    pid=$(cat "$AWS_CRED_PROXY_PID_FILE")
-    if kill -0 "$pid" 2>/dev/null; then
-      kill "$pid"
-      echo "AWS credential proxy stopped (PID $pid)"
-    fi
-    rm -f "$AWS_CRED_PROXY_PID_FILE"
-  else
-    echo "No AWS credential proxy PID file found"
-  fi
-}
-
-aws_cred_proxy_status() {
-  if [[ -f "$AWS_CRED_PROXY_PID_FILE" ]] && kill -0 "$(cat "$AWS_CRED_PROXY_PID_FILE")" 2>/dev/null; then
-    echo "AWS credential proxy: running (PID $(cat "$AWS_CRED_PROXY_PID_FILE")) on port $AWS_CRED_PROXY_PORT"
-  else
-    echo "AWS credential proxy: stopped"
-    rm -f "$AWS_CRED_PROXY_PID_FILE" 2>/dev/null
-  fi
-}
-
 # ── Beeper server management ─────────────────────────────────────
 BEEPER_PID_FILE="${HOME}/.claude-docker-beeper.pid"
 
@@ -553,13 +647,15 @@ ssh_relay_status() {
 cmd_start() {
   check_claude_config_dir
   check_docker_api_version
+  AWS_PROXY_MIGRATION_CHECK=true
   setup_env
+  AWS_PROXY_MIGRATION_CHECK=false
+  prepare_aws_ai_proxy_env
   echo "Building image (GO_VERSION=${GO_VERSION})..."
   docker compose "${COMPOSE_FILES[@]}" build
   echo "Starting container (shell: ${CONTAINER_SHELL})..."
   docker compose "${COMPOSE_FILES[@]}" up -d
   start_ssh_relay
-  start_aws_cred_proxy
   echo ""
   echo "Container '${CONTAINER_NAME}' is running."
   echo "  Interactive:  $(basename "$0") exec"
@@ -572,7 +668,6 @@ cmd_stop() {
   echo "Stopping container..."
   docker compose "${COMPOSE_FILES[@]}" down
   stop_ssh_relay
-  stop_aws_cred_proxy
 }
 
 cmd_status() {
@@ -595,9 +690,6 @@ cmd_status() {
   echo ""
   echo "=== SSH Relay ==="
   ssh_relay_status
-  echo ""
-  echo "=== AWS Credential Proxy ==="
-  aws_cred_proxy_status
 }
 
 cmd_shell() {
@@ -621,13 +713,15 @@ cmd_exec() {
 cmd_rebuild() {
   check_claude_config_dir
   check_docker_api_version
+  AWS_PROXY_MIGRATION_CHECK=true
   setup_env
+  AWS_PROXY_MIGRATION_CHECK=false
+  prepare_aws_ai_proxy_env
   echo "Rebuilding image from scratch (GO_VERSION=${GO_VERSION})..."
   docker compose "${COMPOSE_FILES[@]}" build --no-cache
   echo "Restarting container..."
   docker compose "${COMPOSE_FILES[@]}" up -d --force-recreate
   start_ssh_relay
-  start_aws_cred_proxy
   echo "Done."
 }
 

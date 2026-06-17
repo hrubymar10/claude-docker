@@ -34,7 +34,7 @@ bin/claude-docker-ctrl rebuild  # rebuild image from scratch + restart
   - `.env.example` — all configurable env vars
   - `claude-settings.example.json` — example Claude Code hooks
   - `CLAUDE.md.example` — example CLAUDE.md with notifier usage
-- `aws-cred-proxy/` — Go HTTP server that serves read-only AWS SSO credentials to the container (optional)
+- `../aws-ai-proxy/` - optional independently running AWS credential proxy consumed when `AWS_AI_PROXY_ENABLED` is true (https://github.com/hrubymar10/aws-ai-proxy)
 - `beeper/` — simple Go HTTP server that plays a beep sound on the host (optional)
 - `gpg-keys/` — drop GPG private keys here for commit signing (gitignored)
 
@@ -103,19 +103,22 @@ The `glab` CLI is pre-installed and mirrors the `gh` setup, with one fundamental
 
 ### AWS Credentials (Read-Only)
 
-A host-side credential proxy serves read-only AWS SSO credentials to the container. Only explicitly allowlisted profiles are served — all other requests are rejected.
+A separately running [`aws-ai-proxy`](https://github.com/hrubymar10/aws-ai-proxy) service serves read-only AWS SSO credentials to the container. Only profiles enabled by that service are exposed.
 
 **Setup:**
 
 1. Configure ViewOnlyAccess SSO profiles in `~/.aws/config` on the host
-2. Export the allowlist in your shell profile:
+2. Configure and start `aws-ai-proxy` on the host, then enable consumption in your shell profile or `config/.env`:
    ```bash
-   export AWS_CRED_PROXY_PROFILES="my-readonly:us-east-1,my-test-readonly:eu-west-1"
+   export AWS_AI_PROXY_ENABLED=1
+   export AWS_AI_PROXY_URL="http://host.docker.internal:9998"
    ```
 3. Log in to SSO on the host: `aws sso login --profile my-readonly`
 4. Start/restart the container: `claude-docker-ctrl start`
 
-The proxy starts automatically with the container. The entrypoint generates `~/.aws/config` inside the container with `credential_process` entries that fetch credentials from the proxy via `host.docker.internal`.
+On start, the control script fetches enabled profiles from `$AWS_AI_PROXY_URL/profiles`. The entrypoint generates `~/.aws/config` inside the container with `credential_process` entries that fetch credentials from that URL.
+
+Upgrade note: legacy `AWS_CRED_PROXY_PROFILES` / `AWS_CRED_PROXY_PORT` values are ignored. `claude-docker-ctrl start` and `rebuild` detect active legacy values in the process environment or `config/.env` when `AWS_AI_PROXY_ENABLED` is not truthy, prompt in a terminal, and warn without blocking in non-interactive runs.
 
 **Usage inside the container:**
 ```bash

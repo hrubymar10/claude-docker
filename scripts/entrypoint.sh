@@ -135,26 +135,25 @@ if compgen -G "$GPG_KEY_DIR"/*.asc >/dev/null 2>&1 || \
 fi
 
 # ── AWS credential proxy config ──────────────────────────────────
-if [[ -n "${AWS_CRED_PROXY_PROFILES:-}" ]]; then
+if [[ -n "${AWS_AI_PROXY_PROFILE_CONFIG:-}" ]]; then
   AWS_DIR="$HOST_HOME/.aws"
   mkdir -p "$AWS_DIR"
   AWS_CONFIG="$AWS_DIR/config"
 
-  PROXY_PORT="${AWS_CRED_PROXY_PORT:-9998}"
-  PROXY_URL="http://host.docker.internal:$PROXY_PORT"
+  PROXY_URL="${AWS_AI_PROXY_URL:-http://host.docker.internal:9998}"
 
   cat > "$AWS_CONFIG" <<AWSEOF
 [default]
 region = us-east-1
 AWSEOF
 
-  IFS=',' read -ra ENTRIES <<< "$AWS_CRED_PROXY_PROFILES"
+  IFS=',' read -ra ENTRIES <<< "$AWS_AI_PROXY_PROFILE_CONFIG"
   for entry in "${ENTRIES[@]}"; do
     PROFILE_NAME="${entry%%:*}"
     PROFILE_REGION="${entry#*:}"
-    [[ "$PROFILE_REGION" == "$PROFILE_NAME" ]] && PROFILE_REGION="us-east-1"
     PROFILE_NAME="$(echo "$PROFILE_NAME" | xargs)"
     PROFILE_REGION="$(echo "$PROFILE_REGION" | xargs)"
+    [[ -z "$PROFILE_REGION" || "$PROFILE_REGION" == "$PROFILE_NAME" ]] && PROFILE_REGION="us-east-1"
 
     cat >> "$AWS_CONFIG" <<AWSEOF
 
@@ -165,7 +164,7 @@ AWSEOF
   done
 
   chown -R "$HOST_USER:$HOST_USER" "$AWS_DIR"
-  echo "AWS config generated (profiles: ${AWS_CRED_PROXY_PROFILES})"
+  echo "AWS config generated (profiles: ${AWS_AI_PROXY_PROFILE_CONFIG})"
 fi
 
 # ── Drop to host user and exec CMD ──────────────────────────────

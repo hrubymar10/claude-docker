@@ -185,19 +185,18 @@ Claude inside the container can use read-only AWS credentials via a host-side pr
 
 ### How it works
 
-A small Go HTTP server (`aws-cred-proxy/`) runs on the host and serves credentials for explicitly allowlisted profiles only. Inside the container, `~/.aws/config` is auto-generated with `credential_process` entries that `curl` the proxy via `host.docker.internal`.
+An independently running [`aws-ai-proxy`](https://github.com/hrubymar10/aws-ai-proxy) service serves credentials for explicitly allowlisted profiles only. `claude-docker` does not build, start, or stop the proxy; on start it fetches enabled profiles from `$AWS_AI_PROXY_URL/profiles`. Inside the container, `~/.aws/config` is auto-generated with `credential_process` entries that `curl` the configured proxy URL.
 
 ### Setup
 
 1. Configure [AWS SSO](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html) profiles in `~/.aws/config` on the host (e.g. with `ViewOnlyAccess` permission set)
 
-2. Export the allowlist in your shell profile:
+2. Configure and start [`aws-ai-proxy`](https://github.com/hrubymar10/aws-ai-proxy), then enable consumption in your shell profile or `config/.env`:
 
    ```bash
-   export AWS_CRED_PROXY_PROFILES="my-readonly:us-east-1,my-test-readonly:eu-west-1"
+   export AWS_AI_PROXY_ENABLED=1
+   export AWS_AI_PROXY_URL="http://host.docker.internal:9998"
    ```
-
-   Format: `profile_name:region` pairs, comma-separated. Only listed profiles are served — all other requests return 403.
 
 3. Log in to SSO on the host:
 
@@ -211,7 +210,11 @@ A small Go HTTP server (`aws-cred-proxy/`) runs on the host and serves credentia
    bin/claude-docker-ctrl start
    ```
 
-   The proxy builds and starts automatically. You can check its status with `bin/claude-docker-ctrl status`.
+   If the profile fetch fails, the container still starts and AWS proxy profiles are skipped with a warning.
+
+### Upgrading from the legacy proxy
+
+Older `claude-docker` setups used `AWS_CRED_PROXY_PROFILES` and `AWS_CRED_PROXY_PORT`. Those variables are ignored by the current consumer-only model. During `start` and `rebuild`, `claude-docker-ctrl` detects active legacy variables in the process environment or `config/.env` when `AWS_AI_PROXY_ENABLED` is not already enabled. In a terminal it prompts to comment active legacy lines out of `config/.env`, show migration steps, or ignore once; in non-interactive IDE/automation runs it only prints the warning and continues.
 
 ### Usage inside the container
 
@@ -226,8 +229,8 @@ When the SSO session expires (~12h), re-run `aws sso login` on the host — the 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AWS_CRED_PROXY_PROFILES` | _(unset)_ | Comma-separated `name:region` pairs. Proxy only starts when set. |
-| `AWS_CRED_PROXY_PORT` | `9998` | Port for the credential proxy on the host. |
+| `AWS_AI_PROXY_ENABLED` | `false` | Fetch profiles from the configured proxy during `start`/`rebuild`. |
+| `AWS_AI_PROXY_URL` | `http://host.docker.internal:9998` | Base URL for an independently running `aws-ai-proxy`. |
 
 ## SSH Agent Forwarding (Optional)
 
@@ -407,7 +410,7 @@ go install golang.org/x/tools/gopls@latest
 | Allowed docker commands | `scripts/docker-wrapper.sh` |
 | Socket proxy API rules | `docker-compose.yml` socket-proxy command |
 | GPG keys | `gpg-keys/*.asc` or `*.gpg` |
-| AWS credential proxy | `AWS_CRED_PROXY_PROFILES` env var (see [AWS Credentials](#aws-credentials-optional)) |
+| AWS credential proxy | `AWS_AI_PROXY_ENABLED` and `AWS_AI_PROXY_URL` env vars (see [AWS Credentials](#aws-credentials-optional)) |
 
 ## Testing
 

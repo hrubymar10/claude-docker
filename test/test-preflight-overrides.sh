@@ -149,10 +149,18 @@ else
   fail "start did not issue expected docker compose commands"
 fi
 
-if ! grep -q ' compose .* config' "$LOG"; then
-  ok "preset ALLOWED_BIND_MOUNTS skips compose config call"
+if grep -qE ' compose .* config -q($| )' "$LOG"; then
+  ok "compose files validated"
 else
-  fail "unexpected docker compose config call"
+  fail "compose validation config -q call missing"
+fi
+
+# Validation uses `config -q`; preset ALLOWED_BIND_MOUNTS should only skip the
+# later bare `config` call that derives bind mounts.
+if awk '/ compose / && / config/ && !/(^| )-q( |$)/ { found=1 } END { exit found ? 0 : 1 }' "$LOG"; then
+  fail "unexpected bind-mount derivation config call"
+else
+  ok "preset ALLOWED_BIND_MOUNTS skips bind-mount derivation"
 fi
 
 if grep -q "Container 'claude-docker' is running." "$TMP_ROOT/start.out"; then
