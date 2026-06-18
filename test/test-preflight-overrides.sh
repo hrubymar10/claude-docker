@@ -170,6 +170,51 @@ else
 fi
 
 echo
+echo "═══ AWS proxy migration prompt halt ═══"
+: > "$LOG"
+if (
+  export PATH="$FAKE_BIN:$PATH"
+  export FAKE_DOCKER_LOG="$LOG"
+  export TMPDIR="$TMPDIR_TEST"
+  export HOME="$HOME_DIR"
+  export HOST_HOME="$HOME_DIR"
+  export HOST_USER=tester
+  export HOST_UID=1000
+  export CLAUDE_CONFIG_DIR="$HOME_DIR/.claude"
+  export CLAUDE_DOCKER_AWS_PROXY_MIGRATION_CHOICE=s
+  export AWS_AI_PROXY_ENABLED=false
+  export AWS_CRED_PROXY_PROFILES=legacy
+  export GITHUB_TOKEN=dummy
+  export GIT_USER_NAME='Test User'
+  export GIT_USER_EMAIL='test@example.com'
+  export GOPRIVATE=
+  export GONOSUMDB=
+  "$ROOT/bin/claude-docker-ctrl" start > "$TMP_ROOT/migration-start.out" 2> "$TMP_ROOT/migration-start.err"
+); then
+  fail "migration steps choice should stop start with non-zero status"
+else
+  ok "migration steps choice exits non-zero"
+fi
+
+if grep -q "Stopping: install and start aws-ai-proxy" "$TMP_ROOT/migration-start.err"; then
+  ok "migration steps choice prints stop message"
+else
+  fail "migration steps choice missing stop message"
+fi
+
+if grep -q "Switch to aws-ai-proxy:" "$TMP_ROOT/migration-start.err"; then
+  ok "migration steps choice prints install steps"
+else
+  fail "migration steps choice missing install steps"
+fi
+
+if grep -q ' compose ' "$LOG"; then
+  fail "migration steps choice should not run docker compose"
+else
+  ok "migration steps choice stops before docker compose"
+fi
+
+echo
 echo "═══════════════════════════════"
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && echo "ALL TESTS PASSED" || { echo "SOME TESTS FAILED"; exit 1; }

@@ -214,7 +214,7 @@ An independently running [`aws-ai-proxy`](https://github.com/hrubymar10/aws-ai-p
 
 ### Upgrading from the legacy proxy
 
-Older `claude-docker` setups used `AWS_CRED_PROXY_PROFILES` and `AWS_CRED_PROXY_PORT`. Those variables are ignored by the current consumer-only model. During `start` and `rebuild`, `claude-docker-ctrl` detects active legacy variables in the process environment or `config/.env` when `AWS_AI_PROXY_ENABLED` is not already enabled. In a terminal it prompts to comment active legacy lines out of `config/.env`, show migration steps, or ignore once; in non-interactive IDE/automation runs it only prints the warning and continues.
+Older `claude-docker` setups used `AWS_CRED_PROXY_PROFILES` and `AWS_CRED_PROXY_PORT`. Those variables are ignored by the current consumer-only model. During `start` and `rebuild`, `claude-docker-ctrl` detects active legacy variables in the process environment or `config/.env` when `AWS_AI_PROXY_ENABLED` is not already enabled. In a terminal it prompts to comment active legacy lines out of `config/.env`, show migration steps and stop, or ignore once; in non-interactive IDE/automation runs it only prints the warning and continues.
 
 ### Usage inside the container
 

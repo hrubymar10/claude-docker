@@ -281,6 +281,19 @@ comment_legacy_aws_proxy_config() {
   echo "Commented legacy AWS_CRED_PROXY_* lines in config/.env (backup: $backup)." >&2
 }
 
+handle_aws_proxy_migration_choice() {
+  local choice="$1"
+  case "$choice" in
+    r|R) comment_legacy_aws_proxy_config ;;
+    s|S)
+      print_aws_proxy_migration_steps
+      echo "Stopping: install and start aws-ai-proxy on the host, then re-run 'claude-docker-ctrl <start|rebuild>'." >&2
+      exit 1
+      ;;
+    *) echo "Continuing without AWS proxy migration changes." >&2 ;;
+  esac
+}
+
 check_aws_proxy_migration() {
   "$AWS_PROXY_MIGRATION_CHECK" || return 0
   aws_ai_proxy_enabled && return 0
@@ -294,15 +307,13 @@ check_aws_proxy_migration() {
   [[ -n "$env_vars" ]] && echo "  process environment: $env_vars" >&2
   [[ -n "$config_vars" ]] && echo "  config/.env: $config_vars" >&2
 
-  if [[ -t 0 ]]; then
+  if [[ -n "${CLAUDE_DOCKER_AWS_PROXY_MIGRATION_CHOICE:-}" ]]; then
+    handle_aws_proxy_migration_choice "$CLAUDE_DOCKER_AWS_PROXY_MIGRATION_CHOICE"
+  elif [[ -t 0 ]]; then
     echo "Choose: [r] comment them out of config/.env, [s] show aws-ai-proxy steps, [i] ignore once." >&2
     local choice
     read -r -p "AWS proxy migration [r/s/i]: " choice || choice=""
-    case "$choice" in
-      r|R) comment_legacy_aws_proxy_config ;;
-      s|S) print_aws_proxy_migration_steps ;;
-      *) echo "Continuing without AWS proxy migration changes." >&2 ;;
-    esac
+    handle_aws_proxy_migration_choice "$choice"
   else
     print_aws_proxy_migration_steps
   fi

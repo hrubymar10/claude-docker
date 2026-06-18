@@ -118,7 +118,7 @@ A separately running [`aws-ai-proxy`](https://github.com/hrubymar10/aws-ai-proxy
 
 On start, the control script fetches enabled profiles from `$AWS_AI_PROXY_URL/profiles`. The entrypoint generates `~/.aws/config` inside the container with `credential_process` entries that fetch credentials from that URL.
 
-Upgrade note: legacy `AWS_CRED_PROXY_PROFILES` / `AWS_CRED_PROXY_PORT` values are ignored. `claude-docker-ctrl start` and `rebuild` detect active legacy values in the process environment or `config/.env` when `AWS_AI_PROXY_ENABLED` is not truthy, prompt in a terminal, and warn without blocking in non-interactive runs.
+Upgrade note: legacy `AWS_CRED_PROXY_PROFILES` / `AWS_CRED_PROXY_PORT` values are ignored. `claude-docker-ctrl start` and `rebuild` detect active legacy values in the process environment or `config/.env` when `AWS_AI_PROXY_ENABLED` is not truthy, prompt in a terminal to comment them out, show migration steps and stop, or ignore once, and warn without blocking in non-interactive runs.
 
 **Usage inside the container:**
 ```bash
