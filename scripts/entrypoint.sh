@@ -167,5 +167,13 @@ AWSEOF
   echo "AWS config generated (profiles: ${AWS_AI_PROXY_PROFILE_CONFIG})"
 fi
 
+# ── Ensure ~/.config is user-writable ─────────────────────────────
+# Docker pre-creates bind-mount parent dirs (e.g. a ~/.config/<proj> mount)
+# as root, leaving ~/.config root-owned so the unprivileged user can't create
+# tool config dirs (glab-cli, gh, …) inside it. Fix ownership of the dir
+# itself without recursing, so read-only nested mounts are left untouched.
+mkdir -p "$HOST_HOME/.config"
+chown "$HOST_USER:$HOST_USER" "$HOST_HOME/.config"
+
 # ── Drop to host user and exec CMD ──────────────────────────────
 exec gosu "$HOST_USER" "$@"
