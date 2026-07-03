@@ -69,11 +69,49 @@ if grep -q '^_spawn_detached() {$' bin/lib/session-cleanup.sh \
   && grep -q 'sleep 0.5' bin/lib/session-cleanup.sh \
   && grep -q 'attempt < 20' bin/lib/session-cleanup.sh \
   && grep -q 'sleep 0.25' bin/lib/session-cleanup.sh \
-  && grep -q '^start_session_watchdog "\$CONTAINER" "\$SESSION_ID" "\$\$"$' bin/claude-docker-vscode-wrapper; then
+  && grep -q '^start_session_watchdog "\$CONTAINER" "\$SESSION_ID" "\$\$" "\$DOCKER_USER"$' bin/claude-docker-vscode-wrapper; then
   ok "watchdog is detached (portable fallback ladder) and covers non-TTY wrappers"
 else
   fail "watchdog missing portable detach ladder, fast poll, or non-TTY coverage"
 fi
+
+# The python/perl detach branches must double-fork: a background job of an
+# interactive shell is a process-group leader, where a bare setsid() fails
+# with EPERM and the watchdog would die together with the closing terminal.
+if grep -q 'os\.fork()' bin/lib/session-cleanup.sh \
+  && grep -q 'exit 0 if fork();' bin/lib/session-cleanup.sh; then
+  ok "detach branches double-fork before setsid"
+else
+  fail "python/perl detach branches missing double-fork before setsid"
+fi
+
+# Parent liveness must compare PID + start time, or a recycled PID keeps the
+# watchdog waiting forever.
+if grep -q 'ps -o lstart= -p' bin/lib/session-cleanup.sh; then
+  ok "watchdog checks parent identity (PID + start time), not just kill -0"
+else
+  fail "watchdog liveness check vulnerable to PID reuse"
+fi
+
+echo ""
+echo "═══ stale session reaping + daemon idle-stop ═══"
+if grep -q '^reap_stale_sessions() {$' bin/lib/session-cleanup.sh \
+  && grep -q 'CLAUDE_SESSION_ID=\$session_id' bin/lib/session-cleanup.sh \
+  && grep -q 'claude daemon stop --any' bin/lib/session-cleanup.sh \
+  && grep -q '^_kill_watchdog() {$' bin/lib/session-cleanup.sh; then
+  ok "orphan sweep, watchdog self-cleanup, and daemon idle-stop present"
+else
+  fail "missing orphan sweep / watchdog self-cleanup / daemon idle-stop"
+fi
+
+for wrapper in bin/claude-docker bin/claude-docker-vscode-wrapper bin/claude-docker-jetbrains-wrapper; do
+  if grep -q '^reap_stale_sessions "\$CONTAINER" "\$DOCKER_USER"$' "$wrapper" \
+    && grep -q '^run_session_cleanup "\$CONTAINER" "\$SESSION_ID" "\$DOCKER_USER"$' "$wrapper"; then
+    ok "$wrapper reaps stale sessions and passes container user"
+  else
+    fail "$wrapper missing reap_stale_sessions or user propagation"
+  fi
+done
 
 echo ""
 echo "═══ Docker wrapper bypass check (Vuln 2) ═══"

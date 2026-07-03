@@ -46,8 +46,10 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 source "$SCRIPT_DIR/lib/session-cleanup.sh"
 
+reap_stale_sessions "$CONTAINER" "$DOCKER_USER"
+
 SESSION_ID="$$-$RANDOM-$(date +%s)"
-start_session_watchdog "$CONTAINER" "$SESSION_ID" "$$"
+start_session_watchdog "$CONTAINER" "$SESSION_ID" "$$" "$DOCKER_USER"
 
 docker exec -i \
   -e "CLAUDE_SESSION_ID=$SESSION_ID" \
@@ -55,6 +57,6 @@ docker exec -i \
   claude-session "$@"
 EXIT_CODE=$?
 
-run_session_cleanup "$CONTAINER" "$SESSION_ID"
+run_session_cleanup "$CONTAINER" "$SESSION_ID" "$DOCKER_USER"
 
 exit $EXIT_CODE

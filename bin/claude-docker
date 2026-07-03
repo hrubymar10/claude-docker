@@ -40,8 +40,10 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 source "$SCRIPT_DIR/lib/session-cleanup.sh"
 
+reap_stale_sessions "$CONTAINER" "$DOCKER_USER"
+
 SESSION_ID="$$-$RANDOM-$(date +%s)"
-start_session_watchdog "$CONTAINER" "$SESSION_ID" "$$"
+start_session_watchdog "$CONTAINER" "$SESSION_ID" "$$" "$DOCKER_USER"
 
 # Allocate a TTY only when stdin is an interactive terminal.
 # Piped callers (e.g. aimebu agent, IDE wrappers) run without a TTY;
@@ -56,6 +58,6 @@ docker exec -i $TTY_FLAG \
   claude-session --dangerously-skip-permissions "$@"
 EXIT_CODE=$?
 
-run_session_cleanup "$CONTAINER" "$SESSION_ID"
+run_session_cleanup "$CONTAINER" "$SESSION_ID" "$DOCKER_USER"
 
 exit $EXIT_CODE

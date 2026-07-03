@@ -39,7 +39,7 @@ Pick by which agent you actually use day to day. Running more than one in parall
 - **Docker socket proxy** — filtered API access via [wollomatic/socket-proxy](https://github.com/wollomatic/socket-proxy), prevents container escape
 - **Path mirroring** — `~/project` inside the container = same path on the host (works with both `/Users/` and `/home/`)
 - **VSCode integration** — works with the Claude Code extension via process wrapper
-- **Session teardown for terminal and IDE callers** — host watchdog plus in-container wrapper clean up orphaned Claude processes even when the parent wrapper dies early
+- **Session teardown for terminal and IDE callers** — host watchdog plus in-container wrapper clean up orphaned Claude processes even when the parent wrapper dies early; new sessions sweep orphans left behind by crashes, and the transient `claude daemon` is stopped once the last session ends so background tasks can't keep running unattended
 - **GPG commit signing** — import keys into the container for signed commits
 - **AWS credentials proxy** — read-only AWS SSO credentials via host-side proxy (no secrets in the container)
 - **Pluggable notifications** — customizable `claude-notifier` script for sound/alert integration

@@ -28,6 +28,7 @@ bin/claude-docker-ctrl rebuild  # rebuild image from scratch + restart
 - `bin/claude-docker-vscode-wrapper` — VSCode `claudeProcessWrapper` script (`-i` only, no TTY)
 - `bin/claude-docker-jetbrains-wrapper` — JetBrains (GoLand/IntelliJ) Claude command wrapper (auto-detects TTY)
 - `bin/claude-docker-ctrl` — container lifecycle management
+- `bin/lib/session-cleanup.sh` — host-side session lifecycle shared by the `bin/` wrappers (and the user's shell function): a detached watchdog HUPs the in-container session when the launching shell dies (double-forks before `setsid` so interactive-zsh job control can't kill it with the terminal; tracks parent identity as PID + start time to survive PID reuse), `reap_stale_sessions` sweeps orphaned sessions whose host client is gone, and when the last session ends the transient `claude daemon` is stopped so armed background tasks can't keep re-invoking Claude unattended
 - `config/` — user configuration (gitignored copies + examples):
   - `docker-compose.local.example.yml` — template for project volume mounts
   - `claude-notifier.example` — template for notification script
