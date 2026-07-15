@@ -613,18 +613,35 @@ beeper_status() {
 }
 
 # ── SSH agent relay management ────────────────────────────────────
+# `kill -0 $pid` alone is not enough: after a reboot the pidfile survives, the
+# relay does not, and the PID gets recycled by an unrelated process — the check
+# then reports "already running" forever while the agent is unreachable in the
+# container. Every check below therefore verifies the PID is OUR socat relay.
+ssh_relay_healthy() {
+  [[ -f "$SSH_RELAY_PID_FILE" ]] || return 1
+  local pid
+  pid=$(cat "$SSH_RELAY_PID_FILE")
+  kill -0 "$pid" 2>/dev/null || return 1
+  ps -p "$pid" -o command= 2>/dev/null | grep -q "TCP-LISTEN:${SSH_RELAY_PORT}"
+}
+
 start_ssh_relay() {
   [[ -S "${SSH_AUTH_SOCK:-}" ]] || return 0
 
-  if [[ -f "$SSH_RELAY_PID_FILE" ]] && kill -0 "$(cat "$SSH_RELAY_PID_FILE")" 2>/dev/null; then
+  if ssh_relay_healthy; then
     echo "SSH agent relay already running (PID $(cat "$SSH_RELAY_PID_FILE"))"
     return
   fi
+  rm -f "$SSH_RELAY_PID_FILE"
 
   if ! command -v socat &>/dev/null; then
     echo "Warning: socat not found on host, skipping SSH agent relay" >&2
     return
   fi
+
+  # A leftover relay without a pidfile (or pointing at a stale SSH_AUTH_SOCK)
+  # would hold the port and starve the new listener — clear it first.
+  pkill -f "socat TCP-LISTEN:${SSH_RELAY_PORT}," 2>/dev/null || true
 
   socat TCP-LISTEN:"$SSH_RELAY_PORT",fork,reuseaddr,bind=127.0.0.1 \
     UNIX-CONNECT:"$SSH_AUTH_SOCK" &
@@ -637,7 +654,8 @@ stop_ssh_relay() {
   if [[ -f "$SSH_RELAY_PID_FILE" ]]; then
     local pid
     pid=$(cat "$SSH_RELAY_PID_FILE")
-    if kill -0 "$pid" 2>/dev/null; then
+    # Only kill if it is still our relay — a recycled PID is an innocent process.
+    if ssh_relay_healthy; then
       kill "$pid"
       echo "SSH agent relay stopped (PID $pid)"
     fi
@@ -646,7 +664,7 @@ stop_ssh_relay() {
 }
 
 ssh_relay_status() {
-  if [[ -f "$SSH_RELAY_PID_FILE" ]] && kill -0 "$(cat "$SSH_RELAY_PID_FILE")" 2>/dev/null; then
+  if ssh_relay_healthy; then
     echo "SSH relay: running (PID $(cat "$SSH_RELAY_PID_FILE")) on port $SSH_RELAY_PORT"
   else
     echo "SSH relay: stopped"
@@ -744,6 +762,7 @@ case "${1:-}" in
   shell)   cmd_shell ;;
   exec)    cmd_exec "$@" ;;
   rebuild)        cmd_rebuild ;;
+  ensure-ssh-relay) start_ssh_relay ;;
   beeper-start)   start_beeper ;;
   beeper-stop)    stop_beeper ;;
   *)
@@ -756,6 +775,7 @@ case "${1:-}" in
     echo "  shell           Shell into the container (auto-detects from host \$SHELL)"
     echo "  exec            Interactive Claude session in container"
     echo "  rebuild         Rebuild image from scratch + restart"
+    echo "  ensure-ssh-relay  Start the SSH agent relay if it is not running/healthy"
     echo "  beeper-start    Start beeper notification server (port 9999)"
     echo "  beeper-stop     Stop beeper notification server"
     exit 1
