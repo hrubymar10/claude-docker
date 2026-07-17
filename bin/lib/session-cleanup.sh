@@ -12,6 +12,14 @@
 # `claude daemon` is stopped so armed background tasks (pipeline monitors,
 # detached agents) cannot keep re-invoking Claude with nobody attached.
 
+# Sourced by both bash and zsh (bin/ wrappers and the user's shell function),
+# so the lib locates itself per-shell to derive the repo root for the log dir.
+if [ -n "${ZSH_VERSION:-}" ]; then
+  eval '_SESSION_CLEANUP_ROOT="${${(%):-%x}:A:h:h:h}"'
+else
+  _SESSION_CLEANUP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+fi
+
 _session_pidfile() {
   printf '/tmp/claude-session-%s.pid' "$1"
 }
@@ -22,10 +30,17 @@ _watchdog_pidfile() {
   printf '/tmp/claude-docker-watchdog-%s.pid' "$1"
 }
 
+_session_debug_log_file() {
+  printf '%s' "${CLAUDE_DOCKER_SESSION_DEBUG_LOG:-$_SESSION_CLEANUP_ROOT/config/logs/session-debug.log}"
+}
+
+# Best-effort: this also runs inside the container, where the repo path may
+# not be mounted — a debug log must never break session startup/cleanup.
 _session_debug_log() {
-  local message="$1"
-  local log_file="${CLAUDE_DOCKER_SESSION_DEBUG_LOG:-/tmp/claude-docker-session-debug.log}"
-  printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$message" >> "$log_file"
+  local message="$1" log_file
+  log_file=$(_session_debug_log_file)
+  mkdir -p "$(dirname "$log_file")" 2>/dev/null || return 0
+  printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$message" >> "$log_file" 2>/dev/null || true
 }
 
 _container_user() {
@@ -85,7 +100,10 @@ start_session_watchdog() {
   user=$(_container_user "${4:-}")
   pidfile=$(_session_pidfile "$session_id")
   watchdog_pidfile=$(_watchdog_pidfile "$session_id")
-  log_file="${CLAUDE_DOCKER_SESSION_DEBUG_LOG:-/tmp/claude-docker-session-debug.log}"
+  # The watchdog is fully detached, so resolve the path and create the log
+  # dir up front; its own appends stay best-effort (stderr is /dev/null).
+  log_file=$(_session_debug_log_file)
+  mkdir -p "$(dirname "$log_file")" 2>/dev/null || true
   # Parent identity is PID + start time: a bare `kill -0 $pid` waits forever
   # when the PID is recycled by an unrelated process after the shell exits.
   parent_start=$(ps -o lstart= -p "$parent_pid" 2>/dev/null)
