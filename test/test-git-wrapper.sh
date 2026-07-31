@@ -7,14 +7,18 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Stub `git-real`. should_block_push only invokes it for the no-refspec path
-# (`git push origin`), where it asks for symbolic-ref HEAD. Honour the
-# STUB_HEAD_REF env var so tests can simulate different checkouts.
+# Stub `git-real` repository identity and HEAD lookups. Honour the STUB_*
+# variables so tests can simulate different remotes and checkouts.
 STUB_GIT=$(mktemp)
 cat > "$STUB_GIT" <<'EOF'
 #!/bin/bash
 if [ "${1:-}" = "symbolic-ref" ] && [ "${2:-}" = "HEAD" ]; then
   printf '%s\n' "${STUB_HEAD_REF:-refs/heads/feature}"
+  exit 0
+fi
+if [ "${1:-}" = "remote" ] && [ "${2:-}" = "get-url" ]; then
+  [ "${STUB_REMOTE_MISSING:-0}" = "1" ] && exit 1
+  printf '%s\n' "${STUB_REMOTE_URL:-git@github.com:acme/example.git}"
   exit 0
 fi
 echo "stub git-real: unexpected call: $*" >&2
@@ -117,6 +121,23 @@ GIT_PROTECTED_BRANCHES="develop release" allow "main not protected" origin main
 GIT_PROTECTED_BRANCHES="refs/heads/develop" block "preformatted protected" origin develop
 
 echo ""
+echo "═══ Per-repository branch exemptions ═══"
+GIT_PROTECTED_BRANCH_EXEMPT_REPOS="github.com/acme/widgets" STUB_REMOTE_URL="git@github.com:acme/widgets.git" allow "SSH remote name" origin main
+GIT_PROTECTED_BRANCH_EXEMPT_REPOS="github.com/acme/widgets" STUB_REMOTE_URL="https://GITHUB.COM/acme/widgets.git" allow "HTTPS remote, uppercase host" upstream main
+GIT_PROTECTED_BRANCH_EXEMPT_REPOS="github.com/acme/widgets" allow "explicit URL" https://github.com/acme/widgets.git main
+GIT_PROTECTED_BRANCH_EXEMPT_REPOS="github.com/acme/widgets" STUB_REMOTE_URL="git@github.com:acme/other.git" block "non-exempt repo" origin main
+GIT_PROTECTED_BRANCH_EXEMPT_REPOS="github.com/acme/widgets" STUB_REMOTE_URL="git@github.com:acme/widgets2.git" block "lookalike repo" origin main
+GIT_PROTECTED_BRANCH_EXEMPT_REPOS="github.com/acme/widgets" STUB_REMOTE_URL="git@evil.com:acme/widgets.git" block "lookalike host" origin main
+GIT_PROTECTED_BRANCH_EXEMPT_REPOS="github.com/acme/widgets" STUB_REMOTE_MISSING=1 block "unresolvable destination" origin main
+GIT_PROTECTED_BRANCH_EXEMPT_REPOS="github.com/acme/widgets" STUB_REMOTE_URL=$'git@github.com:acme/other.git\nhttps://github.com/acme/widgets.git' block "mixed push URLs, victim first" dual main
+GIT_PROTECTED_BRANCH_EXEMPT_REPOS="github.com/acme/widgets" STUB_REMOTE_URL=$'https://github.com/acme/widgets.git\ngit@github.com:acme/other.git' block "mixed push URLs, exempt first" dual main
+GIT_PROTECTED_BRANCH_EXEMPT_REPOS="github.com/acme/widgets" STUB_REMOTE_URL=$'git@github.com:acme/widgets.git\nhttps://GITHUB.COM/acme/widgets.git' allow "all push URLs exempt" dual main
+GIT_PROTECTED_BRANCH_EXEMPT_REPOS="github.com/acme/widgets" block "newline in literal URL" $'https://github.com/acme/widgets.git\nhttps://github.com/acme/widgets.git' main
+GIT_PROTECTED_BRANCH_EXEMPT_REPOS="" block "empty exemption list" origin main
+unset GIT_PROTECTED_BRANCH_EXEMPT_REPOS
+block "unset exemption list" origin main
+
+echo ""
 echo "═══ Tag pushes are blocked ═══"
 tag_block "--tags"                     origin --tags
 tag_block "--follow-tags"              --follow-tags origin
@@ -127,6 +148,7 @@ tag_block "HEAD:refs/tags/v1.0"        origin HEAD:refs/tags/v1.0
 tag_block "delete refs/tags/v1.0"      origin :refs/tags/v1.0
 tag_block "tag <name> shorthand"       origin tag v1.0
 tag_block "tag with branch refspec"    origin feature refs/tags/v1.0
+GIT_PROTECTED_BRANCH_EXEMPT_REPOS="github.com/acme/widgets" STUB_REMOTE_URL="git@github.com:acme/widgets.git" tag_block "exempt destination tag" origin refs/tags/v2.0
 tag_allow "branch push, no tags"       origin feature
 tag_allow "branch push, full refname"  origin HEAD:refs/heads/feature
 tag_allow "force branch, no tags"      origin +feature

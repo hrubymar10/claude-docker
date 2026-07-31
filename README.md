@@ -408,6 +408,7 @@ go install golang.org/x/tools/gopls@latest
 | Project mounts | `config/docker-compose.local.yml` |
 | Environment overrides | `config/.env` (see `config/.env.example`) |
 | Protected branches | `GIT_PROTECTED_BRANCHES` env var (default: `main master`) |
+| Branch-exempt destinations | `GIT_PROTECTED_BRANCH_EXEMPT_REPOS` env var (space-separated `host/org/repo` push destinations; tags remain blocked) |
 | Allowed docker commands | `scripts/docker-wrapper.sh` |
 | Socket proxy API rules | `docker-compose.yml` socket-proxy command |
 | GPG keys | `gpg-keys/*.asc` or `*.gpg` |

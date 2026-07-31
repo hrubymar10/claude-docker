@@ -34,6 +34,55 @@ __gw_is_protected_ref() {
   return 1
 }
 
+# Normalize one push URL to host/path (for example,
+# github.com/acme/widgets).
+__gw_normalize_push_url() {
+  local url="$1" host path
+  [ -n "$url" ] || return 1
+  case "$url" in *$'\n'*|*$'\r'*) return 1 ;; esac
+  case "$url" in *://*) url="${url#*://}" ;; esac
+  url="${url#*@}"
+  case "$url" in *:*) url="${url%%:*}/${url#*:}" ;; esac
+  url="${url%/}"
+  url="${url%.git}"
+  case "$url" in */*) ;; *) return 1 ;; esac
+  host="${url%%/*}"
+  path="${url#*/}"
+  host=$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')
+  [ -n "$host" ] && [ -n "$path" ] || return 1
+  printf '%s/%s' "$host" "$path"
+}
+
+__gw_is_exempt_push_url() {
+  local url="$1" identity exempt normalized_exempt
+  identity=$(__gw_normalize_push_url "$url") || return 1
+  for exempt in ${GIT_PROTECTED_BRANCH_EXEMPT_REPOS:-}; do
+    normalized_exempt=$(__gw_normalize_push_url "$exempt") || continue
+    [ "$identity" = "$normalized_exempt" ] && return 0
+  done
+  return 1
+}
+
+# Resolve the actual push destination(s). Every URL must match a
+# host-controlled exemption; mixed or unparseable multi-pushurl remotes fail
+# closed. Repository-local identity never authorizes the exemption.
+__gw_is_branch_exempt_destination() {
+  local destination="$1" urls url saw_url=0
+  case "$destination" in *$'\n'*|*$'\r'*) return 1 ;; esac
+  case "$destination" in
+    *://*|*@*:*|*/*) urls="$destination" ;;
+    *) urls=$("$GIT_REAL" remote get-url --push --all "$destination" 2>/dev/null || true) ;;
+  esac
+  [ -n "$urls" ] || return 1
+  while IFS= read -r url; do
+    [ -n "$url" ] || return 1
+    saw_url=1
+    __gw_is_exempt_push_url "$url" || return 1
+  done <<< "$urls"
+  [ "$saw_url" -eq 1 ] || return 1
+  return 0
+}
+
 # Returns 0 if the push should be blocked, 1 if it should be allowed.
 # Args: everything after `git push` (the subcommand has already been consumed).
 should_block_push() {
@@ -66,6 +115,8 @@ should_block_push() {
 
   # No remote → nothing to protect; let the real git surface its own error.
   [ "${#positionals[@]}" -eq 0 ] && return 1
+
+  __gw_is_branch_exempt_destination "${positionals[0]}" && return 1
 
   local refspecs=("${positionals[@]:1}")
 
