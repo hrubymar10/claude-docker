@@ -56,17 +56,21 @@ YAMLEOF
   COMPOSE_FILES+=(-f "$GPU_OVERRIDE")
 fi
 
-# Mount global ~/CLAUDE.md if it exists
-if [[ -f "$HOME/CLAUDE.md" ]]; then
-  CLAUDEMD_OVERRIDE=$(mktemp "${TMPDIR:-/tmp}/claude-docker-claudemd.XXXXXX")
-  cat > "$CLAUDEMD_OVERRIDE" <<YAMLEOF
+# Mount global context files if they exist (CLAUDE.md may be a one-line
+# @AGENTS.md pointer, so AGENTS.md must ride along or the import dangles).
+for file in "$HOME/AGENTS.md" "$HOME/CLAUDE.md"; do
+  if [[ -f "$file" ]]; then
+    CLAUDEMD_OVERRIDE=$(mktemp "${TMPDIR:-/tmp}/claude-docker-context.XXXXXX")
+    base=$(basename "$file")
+    cat > "$CLAUDEMD_OVERRIDE" <<YAMLEOF
 services:
   claude:
     volumes:
-      - ${HOME}/CLAUDE.md:${HOST_HOME:-${HOME}}/CLAUDE.md:ro
+      - ${file}:${HOST_HOME:-${HOME}}/${base}:ro
 YAMLEOF
-  COMPOSE_FILES+=(-f "$CLAUDEMD_OVERRIDE")
-fi
+    COMPOSE_FILES+=(-f "$CLAUDEMD_OVERRIDE")
+  fi
+done
 
 # Mount ~/.ssh/known_hosts if it exists (for SSH auth)
 if [[ -f "$HOME/.ssh/known_hosts" ]]; then

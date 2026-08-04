@@ -73,7 +73,8 @@ rm -f "$ROOT/config/claude-notifier"
 
 HOME_DIR="$TMP_ROOT/home/tester"
 mkdir -p "$HOME_DIR/.ssh" "$HOME_DIR/.agents" "$HOME_DIR/projects/secrets" "$HOME_DIR/.claude"
-printf 'global claude\n' > "$HOME_DIR/CLAUDE.md"
+printf '@AGENTS.md\n' > "$HOME_DIR/CLAUDE.md"
+printf 'global agents\n' > "$HOME_DIR/AGENTS.md"
 printf 'known-host\n' > "$HOME_DIR/.ssh/known_hosts"
 printf 'secret=1\n' > "$HOME_DIR/projects/.env"
 touch "$HOME_DIR/.claude/.claude.json"
@@ -114,11 +115,17 @@ else
   fail "claude-notifier was not auto-created"
 fi
 
-if ls "$TMPDIR_TEST"/claude-docker-claudemd.* >/dev/null 2>&1 \
-  && grep -Rqs '/CLAUDE.md:.*CLAUDE.md:ro' "$TMPDIR_TEST"/claude-docker-claudemd.*; then
+if ls "$TMPDIR_TEST"/claude-docker-context.* >/dev/null 2>&1 \
+  && grep -Rqs '/CLAUDE.md:.*CLAUDE.md:ro' "$TMPDIR_TEST"/claude-docker-context.*; then
   ok "global CLAUDE.md override created"
 else
   fail "missing CLAUDE.md override file"
+fi
+
+if grep -Rqs '/AGENTS.md:.*AGENTS.md:ro' "$TMPDIR_TEST"/claude-docker-context.*; then
+  ok "global AGENTS.md override created"
+else
+  fail "missing AGENTS.md override file"
 fi
 
 if ls "$TMPDIR_TEST"/claude-docker-ssh.* >/dev/null 2>&1 \
