@@ -17,8 +17,8 @@ The socket-proxy's `allowbindmountfrom` restriction only checks `HostConfig.Bind
 **Impact:** Read/write access to arbitrary host paths via the Docker API.
 
 **Mitigations in place:**
-- `docker-wrapper.sh` blocks `docker run`, `docker build`, `docker cp` at the CLI level. (`docker volume` is still allowlisted; this is the residual gap exploited above.)
-- The real docker binary is at `/usr/libexec/docker-real/docker` and `/usr/bin/docker` is the wrapper, so the allowlist cannot be bypassed by invoking the binary at an absolute path.
+- `docker-wrapper.sh` blocks `docker run` and `docker cp` at the CLI level. `docker build` and `docker buildx` are allowed; builds targeting a sibling sandbox image name emit a warning but proceed. (`docker volume` is still allowlisted; this is the residual gap exploited above.)
+- The real docker binary is at `/usr/libexec/docker-real/docker` and remains executable, but direct calls still reach the filtering proxy and cannot bypass its container policy.
 - Exploiting this requires crafting raw HTTP requests to `tcp://claude-filter-proxy:2375`
 
 ## 2. Git push to feature branches and force push
@@ -107,7 +107,7 @@ The container has unrestricted outbound network access. It can reach any externa
 **Status:** Accepted trade-off
 **Severity:** Medium
 
-The socket-proxy allows POST to `/containers/.*`, `/images/.*`, `/volumes/.*`, `/networks/.*`, and more. The filter proxy only inspects container-create request bodies.
+The socket-proxy allows POST to `/containers/.*`, `/images/.*`, `/volumes/.*`, `/networks/.*`, BuildKit routes, and more. The filter proxy inspects container-create request bodies and rejects non-canonical API paths.
 
 **Impact:** Claude can create/delete containers, pull/delete images, create/delete volumes and networks via the Docker API. The filter proxy blocks dangerous container configurations (privileged, host namespacing, dangerous capabilities), but other API operations are unrestricted.
 
@@ -115,15 +115,20 @@ The socket-proxy allows POST to `/containers/.*`, `/images/.*`, `/volumes/.*`, `
 
 - `docker-wrapper.sh` restricts CLI commands to a safe whitelist
 - `docker-filter-proxy` blocks dangerous container-create configurations
+- `docker-filter-proxy` rejects decoded paths that differ from their canonical form before forwarding
 - Socket-proxy restricts bind mounts to allowed directories
 - Exploiting the broad API surface requires raw HTTP calls, not CLI
+
+An image-tag allowlist for builds was considered and rejected. It would address deliberate image-poisoning persistence, which is outside this project's stated bad-prompts-not-bad-actors threat model, while breaking legitimate generic BuildKit workflows and requiring per-project policy. The wrapper instead gives a non-blocking warning when a tag exactly matches `claude-docker`, `codex-docker`, `pi-docker`, or `vibe-docker`.
+
+During that investigation, an encoded `/%2Fbuild` request demonstrated a real path-normalization mismatch: `http.ServeMux` let the decoded double-slash path reach the handler, and the reverse proxy normalized it before forwarding, bypassing path-based filters. The filter proxy now rejects every request whose decoded path differs from `path.Clean`; adversarial tests pin double-slash, dot-segment, and encoded-slash forms.
 
 ## Security layers summary
 
 ```text
 Claude process
-  └─ docker-wrapper.sh    CLI filter: blocks run/build/cp/volume
-      └─ docker-filter-proxy  Body inspection: blocks privileged/host-ns/caps
+  └─ docker-wrapper.sh    CLI filter; warns on sibling sandbox image tags
+      └─ docker-filter-proxy  Canonical-path + container-body inspection
           └─ socket-proxy      URL filter + bind mount allowlist
               └─ Docker daemon
 ```

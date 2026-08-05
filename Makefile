@@ -46,6 +46,7 @@ test: ## Run host-side integration tests
 	@bash test/test-claude-docker.sh
 	@bash test/test-git-wrapper.sh
 	@bash test/test-vscode-wrapper.sh
+	@bash test/test-docker-wrapper.sh
 	@bash test/test-wrappers-mock.sh
 	@bash test/test-preflight-overrides.sh
 	@bash test/test-compose-config.sh
@@ -54,6 +55,7 @@ test-verbose: ## Run tests with bash -x tracing
 	@bash -x test/test-claude-docker.sh
 	@bash -x test/test-git-wrapper.sh
 	@bash -x test/test-vscode-wrapper.sh
+	@bash -x test/test-docker-wrapper.sh
 	@bash -x test/test-wrappers-mock.sh
 	@bash -x test/test-preflight-overrides.sh
 	@bash -x test/test-compose-config.sh

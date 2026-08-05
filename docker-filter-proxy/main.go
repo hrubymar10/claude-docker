@@ -11,6 +11,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 )
 
@@ -180,6 +181,15 @@ func newProxyHandler(target *url.URL) http.Handler {
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// ServeMux redirects most dot/double-slash paths, but an encoded slash
+		// can reach the handler decoded (for example /%2Fbuild becomes
+		// //build) and then be normalized differently by the reverse proxy.
+		// Reject every non-canonical form before route classification.
+		if clean := path.Clean(r.URL.Path); clean != r.URL.Path {
+			log.Printf("BLOCKED non-canonical path: %s", r.URL.EscapedPath())
+			http.Error(w, "Forbidden: non-canonical API paths are not allowed", http.StatusForbidden)
+			return
+		}
 		if r.Method == "POST" && isNetworkMutation(r.URL.Path) {
 			log.Printf("BLOCKED network connect/disconnect: %s", r.URL.Path)
 			http.Error(w, "Forbidden: network connect/disconnect is not allowed", http.StatusForbidden)

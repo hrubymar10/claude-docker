@@ -29,6 +29,47 @@ func newCapturedUpstream(captured *capturedRequest) *httptest.Server {
 	}))
 }
 
+func TestNonCanonicalBuildPathsNeverReachUpstream(t *testing.T) {
+	tests := []string{
+		"//build?t=example-app%3Atest&version=1",
+		"/v1.54//build?t=example-app%3Atest&version=1",
+		"/./build?t=example-app%3Atest&version=1",
+		"/%2Fbuild?t=example-app%3Atest&version=1",
+	}
+
+	for _, target := range tests {
+		t.Run(target, func(t *testing.T) {
+			var captured capturedRequest
+			upstream := newCapturedUpstream(&captured)
+			defer upstream.Close()
+
+			proxy := httptest.NewServer(newTestHandler(t, upstream.URL))
+			defer proxy.Close()
+			client := &http.Client{
+				CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+					return http.ErrUseLastResponse
+				},
+			}
+			req, err := http.NewRequest(http.MethodPost, proxy.URL+target, strings.NewReader("build context"))
+			if err != nil {
+				t.Fatalf("new request: %v", err)
+			}
+			response, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("request: %v", err)
+			}
+			response.Body.Close()
+
+			if (response.StatusCode < 300 || response.StatusCode >= 400) && response.StatusCode != http.StatusForbidden {
+				t.Fatalf("status = %d, want a redirect or 403", response.StatusCode)
+			}
+			if captured.method != "" {
+				t.Fatalf("non-canonical build path reached upstream as %s %s", captured.method, captured.path)
+			}
+		})
+	}
+}
+
 func newTestHandler(t *testing.T, upstream string) http.Handler {
 	t.Helper()
 	target, err := url.Parse(upstream)

@@ -150,6 +150,10 @@ WRAP_TMP=$(mktemp -d)
 trap 'rm -rf "$WRAP_TMP"' EXIT
 cat > "$WRAP_TMP/mock-docker" <<'MOCK'
 #!/bin/bash
+if [[ "${1:-}" == "build" ]]; then
+  echo "REAL_DOCKER:DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-unset}:$*"
+  exit 0
+fi
 echo "REAL_DOCKER:$*"
 MOCK
 chmod +x "$WRAP_TMP/mock-docker"
@@ -170,11 +174,18 @@ else
   fail "wrapper 'run' got: $output"
 fi
 
-output=$(bash "$WRAP_TMP/wrapper.sh" build . 2>&1 || true)
-if [[ "$output" == *"blocked"* ]]; then
-  ok "wrapper blocks 'build'"
+output=$(DOCKER_BUILDKIT=1 bash "$WRAP_TMP/wrapper.sh" build . 2>&1 || true)
+if [[ "$output" == "REAL_DOCKER:DOCKER_BUILDKIT=1:build ." ]]; then
+  ok "wrapper allows 'build' without changing the builder"
 else
   fail "wrapper 'build' got: $output"
+fi
+
+output=$(bash "$WRAP_TMP/wrapper.sh" buildx build . 2>&1 || true)
+if [[ "$output" == "REAL_DOCKER:buildx build ." ]]; then
+  ok "wrapper allows 'buildx'"
+else
+  fail "wrapper 'buildx' got: $output"
 fi
 
 output=$(bash "$WRAP_TMP/wrapper.sh" cp foo bar 2>&1 || true)

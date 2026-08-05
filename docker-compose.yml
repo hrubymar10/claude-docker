@@ -6,7 +6,7 @@ services:
       - '-listenip=0.0.0.0'
       - '-allowfrom=claude-filter-proxy'
       - '-allowGET=/(v1\..{1,2}/)?(version|info|containers(/.*)?|images(/.*)?|networks(/.*)?|volumes(/.*)?|build.*|exec/.*|events.*|_ping)'
-      - '-allowPOST=/(v1\..{1,2}/)?(containers(/.*)?|images(/.*)?|networks(/.*)?|volumes(/.*)?|build.*|exec/.*|_ping)'
+      - '-allowPOST=/(v1\..{1,2}/)?(containers(/.*)?|images(/.*)?|networks(/.*)?|volumes(/.*)?|build.*|grpc|session.*|exec/.*|_ping)'
       - '-allowPUT=/(v1\..{1,2}/)?(containers(/.*)?)'
       - '-allowDELETE=/(v1\..{1,2}/)?(containers(/.*)?|images(/.*)?|networks(/.*)?|volumes(/.*)?)'
       - '-allowHEAD=/(v1\..{1,2}/)?(containers(/.*)?|images(/.*)?|_ping)'

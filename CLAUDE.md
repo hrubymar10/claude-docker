@@ -20,7 +20,7 @@ bin/claude-docker-ctrl rebuild  # rebuild image from scratch + restart
 - `scripts/` — shell scripts copied into the container at build time:
   - `entrypoint.sh` — runtime setup: socket proxy wait, git credentials, GPG import, user drop
   - `git-wrapper.sh` — blocks `git push` to protected branches and any `git push` that includes tags (`--tags`, `--follow-tags`, `--mirror`, `refs/tags/*` refspecs, `<remote> tag <name>` shorthand). Replaces `/usr/bin/git`. Defense-in-depth only: `git-real` is still readable+executable by the unprivileged user, so a determined caller can invoke `/usr/libexec/git-real/git` directly. Real branch/tag protection must come from the upstream (server-side hook).
-  - `docker-wrapper.sh` — allowlists safe docker subcommands, blocks `run`/`build`/`cp`. Replaces `/usr/bin/docker`; the real binary is moved to `/usr/libexec/docker-real/docker` so the wrapper cannot be bypassed by absolute path.
+  - `docker-wrapper.sh` — allowlists safe docker subcommands, including `build` and `buildx`, and warns (without blocking) when a build tag would overwrite one of the sibling sandbox images. Replaces `/usr/bin/docker`; direct calls to the real binary still pass through the filtering proxy.
   - `claude-session.sh` — process-group wrapper that ensures claude + children (gopls) are killed on disconnect
   - `go-install.sh` — Dockerfile helper to download Go by version
 - `docker-filter-proxy/` — Go reverse proxy that blocks privileged containers, host namespacing, dangerous capabilities
@@ -169,7 +169,7 @@ Instead of mounting the host Docker socket directly (which allows full host acce
 - Only whitelisted API endpoints are forwarded (regex-based URL matching per HTTP method)
 - Bind mounts are restricted to allowed directories via `-allowbindmountfrom` (prevents container escape)
 - The allowlist is auto-derived from actual volume mounts in both compose files
-- A `docker-filter-proxy` (Go reverse proxy) sits between Claude and the socket proxy, inspecting container-create request bodies to block privileged containers, host namespacing (PID/network/user/IPC), dangerous capabilities (SYS_ADMIN, SYS_PTRACE, etc.), device mappings, and network mutations
+- A `docker-filter-proxy` (Go reverse proxy) sits between Claude and the socket proxy. It rejects non-canonical API paths, inspects container-create request bodies to block privileged containers, host namespacing (PID/network/user/IPC), dangerous capabilities (SYS_ADMIN, SYS_PTRACE, etc.), device mappings, and network mutations.
 - The `docker-wrapper.sh` CLI filter remains as defense-in-depth
 - To adjust allowed endpoints, edit the `socket-proxy` command in `docker-compose.yml`
 
