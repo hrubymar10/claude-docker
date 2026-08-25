@@ -123,6 +123,8 @@ COPY scripts/git-wrapper.sh    /usr/bin/git
 COPY scripts/docker-wrapper.sh /usr/bin/docker
 COPY scripts/claude-session.sh /usr/local/bin/claude-session
 COPY scripts/entrypoint.sh     /usr/local/bin/entrypoint.sh
+COPY docker/gitignore-global   /etc/gitignore_global
+COPY docker/gitconfig-system   /etc/gitconfig
 RUN chmod +x /usr/bin/git /usr/bin/docker /usr/local/bin/claude-session /usr/local/bin/entrypoint.sh
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
