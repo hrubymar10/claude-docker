@@ -52,6 +52,7 @@ services:
         EXTRA_PACKAGES: ${EXTRA_PACKAGES:-}
         EXTRA_GO_PACKAGES: ${EXTRA_GO_PACKAGES:-}
         EXTRA_NPM_PACKAGES: ${EXTRA_NPM_PACKAGES:-}
+        PI_WORKER_VERSION: ${PI_WORKER_VERSION:-}
         CC_VERSION: ${CC_VERSION:-}
     volumes:
       - ${CLAUDE_JSON_PATH}:/run/.claude.json.host:ro
