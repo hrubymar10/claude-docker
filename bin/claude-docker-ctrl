@@ -172,6 +172,37 @@ apply_excludes() {
 
 die() { echo "Error: $1" >&2; exit 1; }
 
+# ── pi worker (opt-in via PI_WORKER_VERSION) ─────────────────────
+# pi gets its own writable state dir with only the host models.json mounted
+# into it read-only, so headless workers never touch the user's ~/.pi/agent.
+apply_pi_worker() {
+  [[ -n "${PI_WORKER_VERSION:-}" ]] || return 0
+  [[ "$PI_WORKER_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]] \
+    || die "PI_WORKER_VERSION must be an exact version such as 0.85.1, got: $PI_WORKER_VERSION"
+
+  export PI_WORKER_STATE_DIR PI_WORKER_MODELS_JSON
+  PI_WORKER_STATE_DIR="${PI_WORKER_STATE_DIR:-$HOST_HOME/.pi-worker}"
+  PI_WORKER_MODELS_JSON="${PI_WORKER_MODELS_JSON:-$HOST_HOME/.pi/agent/models.json}"
+  [[ "$PI_WORKER_STATE_DIR" == /* ]] || die "PI_WORKER_STATE_DIR must be an absolute path: $PI_WORKER_STATE_DIR"
+  [[ -f "$PI_WORKER_MODELS_JSON" ]] \
+    || die "PI_WORKER_VERSION is set but the pi provider config does not exist: $PI_WORKER_MODELS_JSON
+Create it on the host or point PI_WORKER_MODELS_JSON in config/.env at your pi models.json."
+  mkdir -p "$PI_WORKER_STATE_DIR"
+
+  PI_WORKER_OVERRIDE=$(mktemp "${TMPDIR:-/tmp}/claude-docker-pi-worker.XXXXXX")
+  cat > "$PI_WORKER_OVERRIDE" <<YAMLEOF
+services:
+  claude:
+    volumes:
+      - ${PI_WORKER_STATE_DIR}:${PI_WORKER_STATE_DIR}
+      - ${PI_WORKER_MODELS_JSON}:${PI_WORKER_STATE_DIR}/models.json:ro
+    environment:
+      PI_CODING_AGENT_DIR: ${PI_WORKER_STATE_DIR}
+YAMLEOF
+  COMPOSE_FILES+=(-f "$PI_WORKER_OVERRIDE")
+  echo "pi worker enabled: pi ${PI_WORKER_VERSION}, state dir ${PI_WORKER_STATE_DIR}" >&2
+}
+
 normalize_env_key() {
   local key="$1"
   key="${key#"${key%%[![:space:]]*}"}"
@@ -525,7 +556,8 @@ setup_env() {
     export SSH_RELAY_PORT
   fi
 
-  # Apply exclude masks (must run before ALLOWED_BIND_MOUNTS)
+  # Optional overrides that read config/.env (must run before ALLOWED_BIND_MOUNTS)
+  apply_pi_worker
   apply_excludes
 
   # Validate compose files — surfaces YAML parse errors with a clear message
@@ -696,6 +728,16 @@ cmd_start() {
   echo "  VSCode:       configure claudeProcessWrapper to bin/claude-docker-vscode-wrapper"
 }
 
+cmd_build() {
+  check_claude_config_dir
+  check_docker_api_version
+  setup_env
+  prepare_aws_ai_proxy_env
+  echo "Building image (GO_VERSION=${GO_VERSION})..."
+  docker compose "${COMPOSE_FILES[@]}" build
+  echo "Done. The running container keeps the old image; run '$(basename "$0") start' to switch."
+}
+
 cmd_stop() {
   setup_env
   echo "Stopping container..."
@@ -761,6 +803,7 @@ cmd_rebuild() {
 # ── Parse arguments ──────────────────────────────────────────────
 case "${1:-}" in
   start)   cmd_start ;;
+  build)   cmd_build ;;
   stop)    cmd_stop ;;
   status)  cmd_status ;;
   shell)   cmd_shell ;;
@@ -774,6 +817,7 @@ case "${1:-}" in
     echo ""
     echo "Commands:"
     echo "  start           Build image, start container"
+    echo "  build           Build image only (does not touch the running container)"
     echo "  stop            Stop container"
     echo "  status          Show container status"
     echo "  shell           Shell into the container (auto-detects from host \$SHELL)"

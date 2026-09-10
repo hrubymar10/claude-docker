@@ -6,6 +6,7 @@ Docker sandbox for running Claude Code in an isolated Linux container that mirro
 
 ```bash
 bin/claude-docker-ctrl start    # build image, start container
+bin/claude-docker-ctrl build    # build image only, leave the running container alone
 bin/claude-docker-ctrl stop     # stop container
 bin/claude-docker-ctrl status   # show container status
 bin/claude-docker-ctrl shell    # shell into the container (auto-detects from host $SHELL)
@@ -143,6 +144,10 @@ To enable GPG-signed commits inside the container:
 The `gpg-keys/` directory is gitignored — only `.gitkeep` is committed.
 
 **Note:** Keys must have no passphrase since the container has no TTY for pinentry. If your key has a passphrase, strip it on a temporary keyring before exporting.
+
+## pi Worker
+
+Opt-in via `PI_WORKER_VERSION=<exact version>` in `config/.env`. The Dockerfile then installs `@earendil-works/pi-coding-agent` at that pin (`--ignore-scripts`, mirroring pi-docker), and `claude-docker-ctrl` generates a compose override (`apply_pi_worker`) that mounts `PI_WORKER_STATE_DIR` (default `~/.pi-worker`) read-write at the same path, mounts the host `PI_WORKER_MODELS_JSON` (default `~/.pi/agent/models.json`) read-only at `$PI_WORKER_STATE_DIR/models.json`, and sets `PI_CODING_AGENT_DIR` to the state dir. The override is added inside `setup_env` after `config/.env` is loaded and before `ALLOWED_BIND_MOUNTS` is derived, so both host paths land in the socket-proxy bind-mount allowlist. Missing `models.json` or a non-exact version is a hard error. Purpose: let Claude sessions run cheap self-hosted models as headless workers (`pi -p --mode json --no-session --model <provider/model> "<brief>"`) without exposing the user's real pi state.
 
 ## Beeper
 

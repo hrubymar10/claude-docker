@@ -107,6 +107,12 @@ ENV DISABLE_AUTOUPDATER=1
 # ── LSP servers (for Claude Code LSP tool) ────────────────────────
 RUN npm install -g typescript typescript-language-server pyright
 
+# ── pi worker (opt-in, exact version pin) ───────────────────────
+ARG PI_WORKER_VERSION=""
+RUN if [ -n "$PI_WORKER_VERSION" ]; then \
+      npm install -g --ignore-scripts "@earendil-works/pi-coding-agent@${PI_WORKER_VERSION}"; \
+    fi
+
 # ── Extra user-specified npm packages (no Dockerfile edit needed) ──
 ARG EXTRA_NPM_PACKAGES=""
 RUN if [ -n "$EXTRA_NPM_PACKAGES" ]; then npm install -g $EXTRA_NPM_PACKAGES; fi

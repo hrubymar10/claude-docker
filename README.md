@@ -43,6 +43,7 @@ Pick by which agent you actually use day to day. Running more than one in parall
 - **GPG commit signing** — import keys into the container for signed commits
 - **AWS credentials proxy** — read-only AWS SSO credentials via host-side proxy (no secrets in the container)
 - **Pluggable notifications** — customizable `claude-notifier` script for sound/alert integration
+- **pi worker (opt-in)** — pinned [pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) install so Claude can run cheap self-hosted models as headless subprocess workers, with your pi provider config mounted read-only
 
 ## Prerequisites
 
@@ -154,6 +155,7 @@ Add to VSCode `settings.json` — `claudeProcessWrapper` requires an absolute pa
 
 ```bash
 bin/claude-docker-ctrl start    # build image, start container
+bin/claude-docker-ctrl build    # build image only, leave the running container alone
 bin/claude-docker-ctrl stop     # stop container
 bin/claude-docker-ctrl status   # show container status
 bin/claude-docker-ctrl shell    # shell into the container (auto-detects from host $SHELL)
@@ -293,6 +295,36 @@ Git transport is left on SSH — no `git@gitlab.com:` → HTTPS rewrite is appli
 | `GITLAB_TOKEN` | `$(glab config get token --host gitlab.com)` | Token for the `glab` CLI. Auto-detected from the host glab, or set explicitly. |
 | `GITLAB_HOST` | `gitlab.com` | Set only for self-managed GitLab. |
 
+## pi Worker (Optional)
+
+Installs the [pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) into the image so a Claude Code session inside the container can delegate to cheap self-hosted models as headless subprocess workers and verify their output itself:
+
+```bash
+pi -p --mode json --no-session --model <provider/model> "<brief>"
+```
+
+### How it works
+
+pi reads its provider list from `models.json`. Instead of mounting your real `~/.pi/agent` (auth, sessions, settings), `claude-docker-ctrl` gives pi a dedicated writable state dir (`PI_WORKER_STATE_DIR`, default `~/.pi-worker`) and bind-mounts only the host `models.json` into it **read-only**. `PI_CODING_AGENT_DIR` points pi at that dir, so workers can never modify the provider config or leak into your interactive pi state.
+
+### Setup
+
+1. Make sure `~/.pi/agent/models.json` exists on the host (or set `PI_WORKER_MODELS_JSON`). `claude-docker-ctrl` refuses to start when the file is missing.
+2. Set an exact version in `config/.env`:
+   ```bash
+   PI_WORKER_VERSION=0.85.1
+   ```
+3. Rebuild and start: `bin/claude-docker-ctrl start` (or `bin/claude-docker-ctrl build` to only build the image).
+4. Verify: `bin/claude-docker-ctrl shell`, then `pi --version` prints the pinned version and `echo $PI_CODING_AGENT_DIR` prints the state dir.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PI_WORKER_VERSION` | _(empty = off)_ | Exact `@earendil-works/pi-coding-agent` version to install. Ranges and `latest` are rejected. |
+| `PI_WORKER_STATE_DIR` | `$HOST_HOME/.pi-worker` | Writable pi state dir, mounted at the same path in the container. Created if missing. |
+| `PI_WORKER_MODELS_JSON` | `$HOST_HOME/.pi/agent/models.json` | Host provider config, mounted read-only at `$PI_WORKER_STATE_DIR/models.json`. |
+
 ## Beeper (Optional)
 
 A tiny host-side HTTP server that plays a sound when Claude pings it. Useful as a notification channel — e.g., have your `claude-notifier` hook fire `curl http://host.docker.internal:9999/beep` whenever Claude finishes a long-running task or hits a permission prompt.
@@ -413,6 +445,7 @@ go install golang.org/x/tools/gopls@latest
 | Socket proxy API rules | `docker-compose.yml` socket-proxy command |
 | GPG keys | `gpg-keys/*.asc` or `*.gpg` |
 | AWS credential proxy | `AWS_AI_PROXY_ENABLED` and `AWS_AI_PROXY_URL` env vars (see [AWS Credentials](#aws-credentials-optional)) |
+| pi worker | `PI_WORKER_VERSION`, `PI_WORKER_STATE_DIR`, `PI_WORKER_MODELS_JSON` env vars (see [pi Worker](#pi-worker-optional)) |
 
 ## Testing
 
