@@ -759,6 +759,18 @@ cmd_rebuild() {
 }
 
 # ── Parse arguments ──────────────────────────────────────────────
+confirm_deprecated_project() {
+  case "${1:-}" in ''|help|-h|--help) return 0 ;; esac
+  printf '\n\nThis project was deprecated in favor of harness-docker\n\n\nYou can still use this but it is recommended to switch to the new solution instead. Quick start migration guide is available here: https://github.com/hrubymar10/harness-docker/blob/master/docs/migration.md\n\nProceed anyway? (Y/n)\n'
+  local answer=""
+  IFS= read -r answer || true
+  case "$answer" in
+    n|N) echo 'Aborted.'; return 1 ;;
+  esac
+}
+
+confirm_deprecated_project "${1:-}" || exit $?
+
 case "${1:-}" in
   start)   cmd_start ;;
   stop)    cmd_stop ;;
